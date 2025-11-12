@@ -196,6 +196,16 @@ Using PlatformIO IDE:
 
 ## 📱 Web Interface
 
+### Screenshots
+
+![Status Tab](images/sc1.png)
+
+*Status tab showing system information and connected clients*
+
+![Outputs Control](images/sc2.png)
+
+*Outputs tab with master brightness control and individual output controls*
+
 ### Status Tab
 - AP IP Address
 - Connected Clients Count
