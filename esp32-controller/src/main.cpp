@@ -690,8 +690,9 @@ void saveOutputName(int index, String name) {
     
     String nameKey = "out_" + String(index) + "_n";
     
-    // If name is empty, remove the preference key
-    if (name.length() == 0 || name.trim().length() == 0) {
+    // If name is empty or whitespace-only, remove the preference key
+    name.trim(); // Trim modifies in place
+    if (name.length() == 0) {
         bool removed = preferences.remove(nameKey.c_str());
         preferences.end();
         outputNames[index] = "";
