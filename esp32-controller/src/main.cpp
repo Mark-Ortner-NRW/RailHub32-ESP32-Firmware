@@ -1,33 +1,35 @@
 #include <WiFi.h>
-#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
+#include <ESPAsyncWiFiManager.h>
 #include <Preferences.h>
 #include "config.h"
 
 // Forward declarations
 void initializeOutputs();
 void initializeWiFi();
-void initializeMQTT();
-void reconnectMQTT();
+void initializeWiFiManager();
+void checkConfigPortalTrigger();
 void initializeWebServer();
-void onMqttMessage(char* topic, byte* payload, unsigned int length);
 void executeOutputCommand(int pin, bool active, int brightnessPercent);
-void sendStatusUpdate();
-void sendDiscoveryMessage();
 void saveOutputState(int index);
 void loadOutputStates();
 void saveAllOutputStates();
+void saveCustomParameters();
+void loadCustomParameters();
 
 // Global variables
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
 // Web Server
-AsyncWebServer server(80);
+AsyncWebServer* server = nullptr;
+DNSServer dns;
 Preferences preferences;
 
 String macAddress;
 String deviceId;
+char customDeviceName[40] = DEVICE_NAME; // Custom device name from WiFiManager
+bool portalRunning = false;
+unsigned long portalButtonPressTime = 0;
+bool wifiConnected = false;
 
 // Output pin configuration
 int outputPins[MAX_OUTPUTS] = LED_PINS;
@@ -35,8 +37,6 @@ bool outputStates[MAX_OUTPUTS] = {false};
 int outputBrightness[MAX_OUTPUTS] = {255}; // 0-255 for PWM
 
 // Timing variables
-unsigned long lastStatusUpdate = 0;
-unsigned long lastMqttReconnect = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -50,39 +50,34 @@ void setup() {
     Serial.println("Device ID: " + deviceId);
     Serial.println("MAC Address: " + macAddress);
     
+    // Initialize portal trigger pin
+    pinMode(PORTAL_TRIGGER_PIN, INPUT_PULLUP);
+    
     // Initialize output pins
     initializeOutputs();
+    
+    // Load custom parameters from preferences
+    loadCustomParameters();
     
     // Load saved output states from NVRAM
     loadOutputStates();
     
-    // Initialize WiFi
-    initializeWiFi();
+    // Initialize WiFi with WiFiManager
+    initializeWiFiManager();
     
-    // Initialize MQTT
-    initializeMQTT();
-    
-    // Initialize web server
-    initializeWebServer();
+    // Initialize web server after WiFi is connected
+    if (wifiConnected) {
+        server = new AsyncWebServer(80);
+        initializeWebServer();
+    }
     
     Serial.println("Setup complete!");
+    Serial.println("Device Name: " + String(customDeviceName));
 }
 
 void loop() {
-    // Handle MQTT connection
-    if (!mqttClient.connected()) {
-        if (millis() - lastMqttReconnect > MQTT_RECONNECT_INTERVAL) {
-            reconnectMQTT();
-            lastMqttReconnect = millis();
-        }
-    }
-    mqttClient.loop();
-    
-    // Send periodic status updates
-    if (millis() - lastStatusUpdate > STATUS_UPDATE_INTERVAL) {
-        sendStatusUpdate();
-        lastStatusUpdate = millis();
-    }
+    // Check for config portal trigger button
+    checkConfigPortalTrigger();
     
     // Handle any other tasks
     yield();
@@ -154,68 +149,314 @@ void initializeWiFi() {
     }
 }
 
-void initializeMQTT() {
-    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setCallback(onMqttMessage);
-    reconnectMQTT();
+void initializeWiFiManager() {
+    Serial.println("Initializing WiFiManager...");
+    
+    // Ensure WiFi is in correct mode
+    WiFi.mode(WIFI_STA);
+    delay(100);
+    
+    // Create temporary server for WiFiManager portal
+    AsyncWebServer portalServer(80);
+    AsyncWiFiManager wifiManager(&portalServer, &dns);
+    
+    // Set custom parameters
+    AsyncWiFiManagerParameter custom_device_name("device_name", "Device Name", customDeviceName, 40);
+    
+    // Add parameters to WiFiManager
+    wifiManager.addParameter(&custom_device_name);
+    
+    // Custom HTML styling to match RailHub32 design
+    const char* customHead = R"rawliteral(
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>">
+<style>
+:root {
+    --color-bg-primary: #0a0a0a;
+    --color-bg-secondary: #141414;
+    --color-bg-card: #1c1c1c;
+    --color-border: #2a2a2a;
+    --color-border-hover: #3a3a3a;
+    --color-text-primary: #e8e8e8;
+    --color-text-secondary: #a0a0a0;
+    --color-accent: #6c9bcf;
+    --color-accent-hover: #5a8bc0;
 }
-
-void reconnectMQTT() {
-    // Check if Access Point is running
-    if (WiFi.softAPgetStationNum() == 0 && !mqttClient.connected()) {
-        // No clients connected, optionally skip MQTT connection
-        // return;
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    padding: 20px;
+    line-height: 1.6;
+}
+h1, h2, h3 { 
+    font-weight: 300; 
+    margin-bottom: 20px; 
+    color: var(--color-text-primary);
+    letter-spacing: 0.02em;
+}
+h1 { font-size: 2rem; margin-bottom: 30px; }
+h3 { 
+    font-size: 0.85rem; 
+    text-transform: uppercase; 
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    margin: 30px 0 15px 0;
+}
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+    background: var(--color-bg-card);
+    padding: 40px;
+    border: 1px solid var(--color-border);
+}
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+label {
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+}
+input[type="text"], input[type="password"], select {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+input[type="text"]:focus, input[type="password"]:focus, select:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}
+button, .btn {
+    padding: 12px 24px;
+    background: var(--color-accent);
+    border: 1px solid var(--color-accent);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    font-family: inherit;
+    width: 100%;
+    margin-top: 10px;
+}
+button:hover, .btn:hover {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+}
+.network-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 20px 0;
+}
+.network-item {
+    padding: 12px 16px;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+    transition: border-color 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.network-item:hover {
+    border-color: var(--color-border-hover);
+}
+.q {
+    color: var(--color-accent);
+    font-weight: 400;
+}
+a {
+    color: var(--color-accent);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+a:hover {
+    color: var(--color-accent-hover);
+}
+.header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding-bottom: 25px;
+    border-bottom: 1px solid var(--color-border);
+}
+.info {
+    background: var(--color-bg-secondary);
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    margin: 20px 0;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+.scanning {
+    text-align: center;
+    padding: 20px;
+    color: var(--color-text-secondary);
+}
+</style>
+<script>
+// Auto-scan on page load and handle scan button
+document.addEventListener('DOMContentLoaded', function() {
+    var scanBtn = document.querySelector('button[onclick*="scan"]');
+    if (scanBtn) {
+        scanBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            var networksDiv = document.querySelector('.network-list') || document.querySelector('div:has(> a[href*="wifisave"])').parentElement;
+            if (networksDiv) {
+                networksDiv.innerHTML = '<div class="scanning">Scanning for networks...</div>';
+            }
+            // Reload page to trigger new scan
+            setTimeout(function() {
+                window.location.reload();
+            }, 1000);
+        });
     }
     
-    if (!mqttClient.connected()) {
-        Serial.print("Attempting MQTT connection...");
+    // Auto-scroll to networks if they exist
+    var firstNetwork = document.querySelector('a[href*="wifisave"]');
+    if (firstNetwork) {
+        firstNetwork.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+});
+</script>
+)rawliteral";
+
+    wifiManager.setCustomHeadElement(customHead);
+    
+    // Set minimum signal quality to show networks (lower = show more networks)
+    wifiManager.setMinimumSignalQuality(8);
+    
+    // Set save config callback
+    wifiManager.setSaveConfigCallback([]() {
+        Serial.println("Configuration saved!");
+    });
+    
+    // Set configuration portal timeout (0 = no timeout for easier mobile config)
+    wifiManager.setConfigPortalTimeout(0);
+    
+    // Debug output
+    wifiManager.setDebugOutput(true);
+    
+    // Set AP callback
+    wifiManager.setAPCallback([](AsyncWiFiManager *myWiFiManager) {
+        Serial.println("\n=== Entered Config Mode ===");
+        Serial.println("AP IP: " + WiFi.softAPIP().toString());
+        Serial.println("AP SSID: " + String(WIFIMANAGER_AP_SSID));
+        Serial.println("AP Password: " + String(WIFIMANAGER_AP_PASSWORD));
+        Serial.println("Connect to this AP and navigate to 192.168.4.1");
+        Serial.println("Portal is running on port 80");
+        Serial.println("===========================\n");
         
-        if (mqttClient.connect(deviceId.c_str())) {
-            Serial.println(" connected!");
-            
-            // Subscribe to command topic
-            String commandTopic = "railhub32/device/" + macAddress + "/command";
-            mqttClient.subscribe(commandTopic.c_str());
-            Serial.println("Subscribed to: " + commandTopic);
-            
-            // Send discovery message
-            sendDiscoveryMessage();
-            
-        } else {
-            Serial.print(" failed, rc=");
-            Serial.print(mqttClient.state());
-            Serial.println(" will try again later");
+        // Blink LED to indicate config mode
+        for (int i = 0; i < 10; i++) {
+            digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+            delay(100);
         }
+        digitalWrite(STATUS_LED_PIN, HIGH);
+    });
+    
+    // Configure static IP for portal
+    IPAddress portal_ip(192, 168, 4, 1);
+    IPAddress portal_gateway(192, 168, 4, 1);
+    IPAddress portal_subnet(255, 255, 255, 0);
+    wifiManager.setAPStaticIPConfig(portal_ip, portal_gateway, portal_subnet);
+    
+    // Try to connect with saved credentials or start portal
+    Serial.println("Attempting to connect to WiFi...");
+    
+    if (wifiManager.autoConnect(WIFIMANAGER_AP_SSID, WIFIMANAGER_AP_PASSWORD)) {
+        // Connected to WiFi successfully
+        wifiConnected = true;
+        Serial.println("\n=== Connected to WiFi! ===");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+        Serial.print("SSID: ");
+        Serial.println(WiFi.SSID());
+        Serial.println("===========================\n");
+        
+        // Get custom parameters
+        strncpy(customDeviceName, custom_device_name.getValue(), 40);
+        saveCustomParameters();
+        
+        // Solid LED to indicate connected
+        digitalWrite(STATUS_LED_PIN, HIGH);
+    } else {
+        // Failed to connect - fallback to AP mode
+        Serial.println("Failed to connect - starting fallback AP mode");
+        wifiConnected = false;
+        initializeWiFi();
     }
 }
 
-void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-    String message;
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
+void checkConfigPortalTrigger() {
+    // Check if portal trigger button is pressed
+    if (digitalRead(PORTAL_TRIGGER_PIN) == LOW) {
+        if (portalButtonPressTime == 0) {
+            portalButtonPressTime = millis();
+        } else if (millis() - portalButtonPressTime > PORTAL_TRIGGER_DURATION && !portalRunning) {
+            Serial.println("Portal trigger detected! Resetting WiFi and restarting...");
+            portalRunning = true;
+            
+            // Blink LED rapidly
+            for (int i = 0; i < 20; i++) {
+                digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+                delay(50);
+            }
+            
+            // Clear WiFi credentials from preferences
+            preferences.begin("railhub32", false);
+            preferences.remove("wifi_ssid");
+            preferences.remove("wifi_pass");
+            preferences.end();
+            
+            // Clear ESP32 WiFi settings
+            WiFi.disconnect(true, true);
+            delay(1000);
+            
+            // Restart to trigger portal
+            ESP.restart();
+        }
+    } else {
+        portalButtonPressTime = 0;
+        portalRunning = false;
     }
-    
-    Serial.println("Received MQTT message: " + String(topic) + " - " + message);
-    
-    // Parse JSON command
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-        Serial.println("Failed to parse JSON command");
-        return;
-    }
-    
-    // Extract command parameters
-    int pin = doc["pin"];
-    bool active = doc["active"];
-    int brightness = doc["brightness"] | 100; // Default to 100%
-    
-    // Execute command
-    executeOutputCommand(pin, active, brightness);
 }
 
-void executeOutputCommand(int pin, bool active, int brightnessPercent) {
+void saveCustomParameters() {
+    Serial.println("Saving custom parameters...");
+    preferences.begin("railhub32", false);
+    preferences.putString("deviceName", customDeviceName);
+    preferences.end();
+    Serial.println("Custom parameters saved: " + String(customDeviceName));
+}
+
+void loadCustomParameters() {
+    Serial.println("Loading custom parameters...");
+    preferences.begin("railhub32", true);
+    String savedName = preferences.getString("deviceName", DEVICE_NAME);
+    preferences.end();
+    
+    strncpy(customDeviceName, savedName.c_str(), 40);
+    customDeviceName[39] = '\0'; // Ensure null termination
+    
+    Serial.println("Loaded device name: " + String(customDeviceName));
+}
+
+void reconnectMQTT() {r* topic, byte* payload, unsigned int length) {) {
     // Find the output index for the given pin
     int outputIndex = -1;
     for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -248,60 +489,7 @@ void executeOutputCommand(int pin, bool active, int brightnessPercent) {
                   " with brightness " + String(brightnessPercent) + "% [SAVED]");
 }
 
-void sendStatusUpdate() {
-    if (!mqttClient.connected()) {
-        return;
-    }
-    
-    DynamicJsonDocument doc(2048);
-    doc["status"] = "online";
-    doc["ip"] = WiFi.softAPIP().toString();
-    doc["apClients"] = WiFi.softAPgetStationNum();
-    doc["freeHeap"] = ESP.getFreeHeap();
-    doc["uptime"] = millis();
-    
-    JsonArray outputs = doc.createNestedArray("outputs");
-    for (int i = 0; i < MAX_OUTPUTS; i++) {
-        JsonObject output = outputs.createNestedObject();
-        output["pin"] = outputPins[i];
-        output["active"] = outputStates[i];
-        output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
-    }
-    
-    String statusJson;
-    serializeJson(doc, statusJson);
-    
-    String statusTopic = "railhub32/device/" + macAddress + "/status";
-    mqttClient.publish(statusTopic.c_str(), statusJson.c_str());
-    
-    Serial.println("Status update sent");
-}
-
-void sendDiscoveryMessage() {
-    DynamicJsonDocument doc(1024);
-    doc["deviceId"] = deviceId;
-    doc["macAddress"] = macAddress;
-    doc["name"] = DEVICE_NAME;
-    doc["type"] = "LightController";
-    doc["mode"] = "AccessPoint";
-    doc["ip"] = WiFi.softAPIP().toString();
-    doc["apSSID"] = AP_SSID;
-    
-    JsonArray pins = doc.createNestedArray("outputPins");
-    for (int i = 0; i < MAX_OUTPUTS; i++) {
-        pins.add(outputPins[i]);
-    }
-    
-    String discoveryJson;
-    serializeJson(doc, discoveryJson);
-    
-    String discoveryTopic = "railhub32/device/" + macAddress + "/discovery";
-    mqttClient.publish(discoveryTopic.c_str(), discoveryJson.c_str());
-    
-    Serial.println("Discovery message sent");
-}
-
-void saveOutputState(int index) {
+void sendDiscoveryMessage() {x) {
     if (index < 0 || index >= MAX_OUTPUTS) {
         return;
     }
@@ -363,15 +551,18 @@ void saveAllOutputStates() {
 }
 
 void initializeWebServer() {
+    if (!server) return;
+    
     // Serve main HTML page with RailHub32 styling
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         String html = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RailHub32 ESP32 - )rawliteral" + String(DEVICE_NAME) + R"rawliteral(</title>
+    <title>🚂 RailHub32 ESP32 - )rawliteral" + String(customDeviceName) + R"rawliteral(</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>">
     <style>
         :root {
             --color-bg-primary: #0a0a0a;
@@ -413,6 +604,12 @@ void initializeWebServer() {
         }
         .header-content {
             margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            font-weight: 300;
+            letter-spacing: 0.03em;
         }
         header h1 {
             font-size: 2rem;
@@ -734,7 +931,7 @@ void initializeWebServer() {
         <header>
             <div class="header-content">
                 <h1>🚂 RailHub32 ESP32</h1>
-                <p id="deviceName">)rawliteral" + String(DEVICE_NAME) + R"rawliteral(</p>
+                <p id="deviceName">)rawliteral" + String(customDeviceName) + R"rawliteral(</p>
                 <div class="language-selector">
                     <button class="lang-btn active" data-lang="en">EN</button>
                     <button class="lang-btn" data-lang="de">DE</button>
@@ -1170,12 +1367,14 @@ void initializeWebServer() {
     });
     
     // API endpoint for status
-    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(2048);
         doc["deviceId"] = deviceId;
         doc["macAddress"] = macAddress;
-        doc["name"] = DEVICE_NAME;
-        doc["ip"] = WiFi.softAPIP().toString();
+        doc["name"] = customDeviceName;
+        doc["wifiMode"] = WiFi.getMode() == WIFI_AP ? "AP" : "STA";
+        doc["ip"] = WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+        doc["ssid"] = WiFi.getMode() == WIFI_AP ? String(AP_SSID) : WiFi.SSID();
         doc["apClients"] = WiFi.softAPgetStationNum();
         doc["freeHeap"] = ESP.getFreeHeap();
         doc["uptime"] = millis();
@@ -1194,7 +1393,7 @@ void initializeWebServer() {
     });
     
     // API endpoint for control
-    server.on("/api/control", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, 
+    server->on("/api/control", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, 
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         DynamicJsonDocument doc(1024);
         DeserializationError error = deserializeJson(doc, (const char*)data);
@@ -1214,7 +1413,7 @@ void initializeWebServer() {
     });
     
     // API endpoint to reset saved states
-    server.on("/api/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server->on("/api/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
         Serial.println("Resetting all saved states...");
         preferences.begin("railhub32", false);
         preferences.clear(); // Clear all saved preferences
@@ -1223,6 +1422,6 @@ void initializeWebServer() {
         request->send(200, "application/json", "{\"status\":\"reset_complete\"}");
     });
     
-    server.begin();
+    server->begin();
     Serial.println("Web server started on port 80");
 }

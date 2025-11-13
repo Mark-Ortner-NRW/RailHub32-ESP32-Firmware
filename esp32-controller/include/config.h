@@ -13,23 +13,21 @@
 #define AP_GATEWAY "192.168.4.1"         // Gateway IP
 #define AP_SUBNET "255.255.255.0"        // Subnet mask
 
-// MQTT Configuration
-#define MQTT_BROKER "192.168.4.100"      // IP of your MQTT broker (adjust if broker is on AP network)
-#define MQTT_PORT 1883
-#define MQTT_CLIENT_ID_PREFIX "RailHub32-ESP32-"
-
 // Device Configuration
 #define DEVICE_NAME "ESP32-Controller-01"
 #define MAX_OUTPUTS 16
+
+// WiFiManager Configuration
+#define WIFIMANAGER_AP_SSID "RailHub32-Setup"  // Configuration portal AP name
+#define WIFIMANAGER_AP_PASSWORD ""             // Empty for open AP, or set password
+#define WIFIMANAGER_TIMEOUT 180                 // Configuration portal timeout in seconds (3 min)
+#define PORTAL_TRIGGER_PIN 0                    // GPIO pin to trigger config portal (boot button)
+#define PORTAL_TRIGGER_DURATION 3000            // Hold duration in ms to trigger portal
 
 // Pin Definitions for different output types
 #define LED_PINS {2, 4, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 12, 13, 14}
 
 // Status LED
 #define STATUS_LED_PIN 2
-
-// Update intervals
-#define STATUS_UPDATE_INTERVAL 30000  // 30 seconds
-#define MQTT_RECONNECT_INTERVAL 5000  // 5 seconds
 
 #endif

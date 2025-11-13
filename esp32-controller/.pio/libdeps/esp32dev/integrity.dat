@@ -1,4 +1,4 @@
-knolleary/PubSubClient@^2.8
+https://github.com/me-no-dev/ESPAsyncWebServer.git
+https://github.com/alanswx/ESPAsyncWiFiManager.git
 bblanchon/ArduinoJson@^7.0.4
 https://github.com/me-no-dev/AsyncTCP.git
-https://github.com/me-no-dev/ESPAsyncWebServer.git

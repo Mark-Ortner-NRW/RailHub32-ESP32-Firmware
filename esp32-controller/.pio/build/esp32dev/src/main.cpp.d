@@ -194,7 +194,6 @@
  C:/Users/marko/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  C:/Users/marko/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
  C:/Users/marko/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- .pio/libdeps/esp32dev/PubSubClient/src/PubSubClient.h \
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.h \
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.hpp \
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson/Configuration.hpp \
@@ -208,5 +207,13 @@
  .pio/libdeps/esp32dev/ESPAsyncWebServer/src/WebHandlerImpl.h \
  .pio/libdeps/esp32dev/ESPAsyncWebServer/src/WebResponseImpl.h \
  C:/Users/marko/.platformio/packages/framework-arduinoespressif32/cores/esp32/StreamString.h \
+ .pio/libdeps/esp32dev/ESPAsyncWiFiManager/src/ESPAsyncWiFiManager.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/wpa_supplicant/esp_supplicant/include/esp_wps.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_wifi/include/esp_wifi_crypto_types.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/libraries/DNSServer/src/DNSServer.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_rom/include/esp32/rom/rtc.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_rom/include/esp32/rom/ets_sys.h \
+ C:/Users/marko/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/soc/esp32/include/soc/rtc_cntl_reg.h \
  C:/Users/marko/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src/Preferences.h \
  include/config.h
