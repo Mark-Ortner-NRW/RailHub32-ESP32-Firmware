@@ -3,6 +3,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncWiFiManager.h>
 #include <Preferences.h>
+#include <ESPmDNS.h>
 #include "config.h"
 
 // Forward declarations
@@ -21,7 +22,9 @@ void loadCustomParameters();
 // Global variables
 // Web Server
 AsyncWebServer* server = nullptr;
+AsyncWebServer portalServer(80);
 DNSServer dns;
+AsyncWiFiManager wifiManager(&portalServer, &dns);
 Preferences preferences;
 
 String macAddress;
@@ -41,6 +44,11 @@ String outputNames[MAX_OUTPUTS]; // Custom names for outputs
 void setup() {
     Serial.begin(115200);
     delay(100);
+    
+    // Reduce ESP32 core logging to suppress UDP errors from DNS server
+    esp_log_level_set("WiFiUdp", ESP_LOG_NONE);
+    esp_log_level_set("*", ESP_LOG_INFO);
+    
     Serial.println("\n\n========================================");
     Serial.println("  RailHub32 ESP32 Controller v1.0");
     Serial.println("========================================");
@@ -93,6 +101,9 @@ void setup() {
 }
 
 void loop() {
+    // Process WiFiManager tasks (required for async operation)
+    wifiManager.loop();
+    
     // Check for config portal trigger button
     checkConfigPortalTrigger();
     
@@ -205,9 +216,7 @@ void initializeWiFiManager() {
     WiFi.mode(WIFI_STA);
     delay(100);
     
-    // Create temporary server for WiFiManager portal
-    AsyncWebServer portalServer(80);
-    AsyncWiFiManager wifiManager(&portalServer, &dns);
+    // WiFiManager already initialized globally
     
     // Set custom parameters
     AsyncWiFiManagerParameter custom_device_name("device_name", "Device Name", customDeviceName, 40);
@@ -217,6 +226,10 @@ void initializeWiFiManager() {
     
     // Custom HTML styling to match RailHub32 design
     const char* customHead = R"rawliteral(
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>">
 <style>
 :root {
@@ -351,31 +364,10 @@ a:hover {
     font-size: 0.85rem;
     color: var(--color-text-secondary);
 }
-.scanning {
-    text-align: center;
-    padding: 20px;
-    color: var(--color-text-secondary);
-}
 </style>
 <script>
-// Auto-scan on page load and handle scan button
+// Auto-scroll to networks if they exist
 document.addEventListener('DOMContentLoaded', function() {
-    var scanBtn = document.querySelector('button[onclick*="scan"]');
-    if (scanBtn) {
-        scanBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            var networksDiv = document.querySelector('.network-list') || document.querySelector('div:has(> a[href*="wifisave"])').parentElement;
-            if (networksDiv) {
-                networksDiv.innerHTML = '<div class="scanning">Scanning for networks...</div>';
-            }
-            // Reload page to trigger new scan
-            setTimeout(function() {
-                window.location.reload();
-            }, 1000);
-        });
-    }
-    
-    // Auto-scroll to networks if they exist
     var firstNetwork = document.querySelector('a[href*="wifisave"]');
     if (firstNetwork) {
         firstNetwork.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -398,6 +390,9 @@ document.addEventListener('DOMContentLoaded', function() {
         Serial.print("[WIFI] Device Name: ");
         Serial.println(customDeviceName);
         Serial.println("[WIFI] WiFi credentials will be used on next boot");
+        Serial.println("[WIFI] Restarting ESP32 to apply new configuration...");
+        delay(2000);
+        ESP.restart();
     });
     
     // Set configuration portal timeout (0 = no timeout for easier mobile config)
@@ -405,6 +400,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Disable debug output to improve web interface performance
     wifiManager.setDebugOutput(false);
+    
+
     
     // Set AP callback
     wifiManager.setAPCallback([](AsyncWiFiManager *myWiFiManager) {
@@ -468,6 +465,20 @@ document.addEventListener('DOMContentLoaded', function() {
         // Get custom parameters
         strncpy(customDeviceName, custom_device_name.getValue(), 40);
         saveCustomParameters();
+        
+        // Start mDNS service
+        String hostname = String(customDeviceName);
+        hostname.toLowerCase();
+        hostname.replace(" ", "-");
+        if (MDNS.begin(hostname.c_str())) {
+            Serial.print("[MDNS] mDNS responder started: ");
+            Serial.print(hostname);
+            Serial.println(".local");
+            MDNS.addService("http", "tcp", 80);
+            Serial.println("[MDNS] HTTP service added");
+        } else {
+            Serial.println("[ERROR] mDNS failed to start");
+        }
         
         // Solid LED to indicate connected
         digitalWrite(STATUS_LED_PIN, HIGH);
