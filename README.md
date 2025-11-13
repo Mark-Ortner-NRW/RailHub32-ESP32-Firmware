@@ -52,6 +52,7 @@ Advanced firmware for ESP32-based model railway control system with WiFi configu
 - **PWM Control** - 8-bit brightness resolution (0-255) at 5kHz
 - **Low Memory Footprint** - Efficient resource usage (~15% RAM, ~69% Flash)
 - **Optimized Logging** - Debug output suppressed for production performance
+- **Comprehensive Unit Tests** - 33 automated tests covering GPIO, JSON, configuration, and utilities
 
 ## 🏗️ System Architecture
 
@@ -766,7 +767,12 @@ When in configuration mode, the ESP32 hosts a captive portal:
 firmware/
 ├── .gitignore                 # Git ignore rules
 ├── README.md                  # This file
+├── ESTIMATION.md              # Development effort analysis
 ├── firmware.sln               # Visual Studio solution
+├── arc42/                     # Architecture documentation (50+ diagrams)
+│   ├── 01_introduction_and_goals.md
+│   ├── 02_constraints.md
+│   └── ... (12 comprehensive documents)
 ├── esp32-controller/
 │   ├── platformio.ini         # PlatformIO configuration
 │   ├── include/
@@ -774,6 +780,12 @@ firmware/
 │   │   └── certificates.h     # SSL certificates (if needed)
 │   ├── src/
 │   │   └── main.cpp           # Main application (1868 lines)
+│   ├── test/                  # Unit test suite (33 tests)
+│   │   ├── README.md          # Testing documentation
+│   │   ├── test_config/       # Configuration tests (11 tests)
+│   │   ├── test_gpio/         # GPIO/PWM tests (5 tests)
+│   │   ├── test_json/         # JSON API tests (8 tests)
+│   │   └── test_utils/        # Utility tests (9 tests)
 │   └── .pio/                  # PlatformIO build artifacts (ignored)
 ├── ESP32Flasher/              # Windows flasher tool
 │   ├── ESP32Flasher.csproj    # C# project file
@@ -849,22 +861,50 @@ graph TB
     ESPmDNS @ 2.0.0               # mDNS hostname support
     Preferences @ 2.0.0           # NVRAM persistent storage
     WiFi @ 2.0.0                  # WiFi management
+    Unity @ 2.6.0                 # Unit testing framework (test environments only)
 ```
 
 ### Build Configuration
 
 ```ini
 [platformio.ini]
+
+# Production environment
+[env:esp32dev]
 platform = espressif32 @ 6.12.0
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
 upload_speed = 921600
 upload_port = COM8
-
 build_flags = 
     -DCORE_DEBUG_LEVEL=0                    # Disable debug logging
     -DCONFIG_ARDUHAL_LOG_DEFAULT_LEVEL=0   # Suppress HAL logs
+
+# Test environment (ESP32 hardware)
+[env:esp32dev_test]
+platform = espressif32
+board = esp32dev
+framework = arduino
+test_framework = unity
+test_build_src = no                         # Don't link main.cpp in tests
+monitor_speed = 115200
+build_flags = 
+    -DCORE_DEBUG_LEVEL=3                    # Enable debug for testing
+    -DUNIT_TEST
+lib_deps = 
+    bblanchon/ArduinoJson@^7.0.4
+    throwtheswitch/Unity@^2.6.0
+
+# Native test environment (no hardware required)
+[env:native]
+platform = native
+build_flags = 
+    -std=c++11
+    -DUNIT_TEST
+    -DNATIVE_BUILD
+lib_deps = 
+    bblanchon/ArduinoJson@^7.0.4
 ```
 
 ### Building
@@ -885,6 +925,36 @@ platformio run --target upload --target monitor
 # Monitor serial output only
 platformio device monitor
 ```
+
+### Testing
+
+The project includes a comprehensive unit test suite with 33 tests covering all major functionality.
+
+```bash
+# Run all tests on ESP32 hardware
+platformio test -e esp32dev_test
+
+# Run tests in native environment (faster, no hardware needed)
+platformio test -e native
+
+# Run specific test suite
+platformio test -e esp32dev_test -f test_gpio
+platformio test -e esp32dev_test -f test_json
+platformio test -e esp32dev_test -f test_config
+platformio test -e esp32dev_test -f test_utils
+```
+
+**Test Coverage:**
+- **test_config** (11 tests): Configuration validation, WiFi settings, device parameters
+- **test_gpio** (5 tests): GPIO pin validation, PWM channel assignment, hardware safety
+- **test_json** (8 tests): JSON parsing, API serialization, error handling
+- **test_utils** (9 tests): Utility functions, conversions, validation helpers
+
+**Test Environments:**
+- `esp32dev_test`: Runs tests on actual ESP32 hardware (recommended for GPIO testing)
+- `native`: Runs tests on local machine without hardware (faster for logic testing)
+
+For detailed testing documentation, see [test/README.md](esp32-controller/test/README.md).
 
 ### Memory Usage
 
@@ -1298,6 +1368,8 @@ timeline
 - [x] NVRAM persistent storage
 - [x] Asynchronous web server
 - [x] Real-time status monitoring
+- [x] Comprehensive unit test suite (33 tests)
+- [x] Automated testing on ESP32 hardware and native environments
 
 ### In Progress 🚧
 
