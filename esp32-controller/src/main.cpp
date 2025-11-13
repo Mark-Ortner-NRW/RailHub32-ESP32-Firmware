@@ -40,36 +40,56 @@ String outputNames[MAX_OUTPUTS]; // Custom names for outputs
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("RailHub32 ESP32 Controller Starting...");
+    delay(100);
+    Serial.println("\n\n========================================");
+    Serial.println("  RailHub32 ESP32 Controller v1.0");
+    Serial.println("========================================");
+    Serial.println("[BOOT] Chip Model: " + String(ESP.getChipModel()));
+    Serial.println("[BOOT] Chip Revision: " + String(ESP.getChipRevision()));
+    Serial.println("[BOOT] CPU Frequency: " + String(ESP.getCpuFreqMHz()) + " MHz");
+    Serial.println("[BOOT] Flash Size: " + String(ESP.getFlashChipSize() / 1024) + " KB");
+    Serial.println("[BOOT] Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
     
     // Get MAC address for unique identification
     macAddress = WiFi.macAddress();
-    
-    Serial.println("MAC Address: " + macAddress);
+    Serial.println("[INIT] MAC Address: " + macAddress);
     
     // Initialize portal trigger pin
+    Serial.println("[INIT] Configuring portal trigger pin (GPIO " + String(PORTAL_TRIGGER_PIN) + ")");
     pinMode(PORTAL_TRIGGER_PIN, INPUT_PULLUP);
     
     // Initialize output pins
+    Serial.println("[INIT] Initializing " + String(MAX_OUTPUTS) + " output pins...");
     initializeOutputs();
     
     // Load custom parameters from preferences
+    Serial.println("[INIT] Loading custom parameters from NVRAM...");
     loadCustomParameters();
     
     // Load saved output states from NVRAM
+    Serial.println("[INIT] Loading saved output states...");
     loadOutputStates();
     
     // Initialize WiFi with WiFiManager
+    Serial.println("[INIT] Initializing WiFi Manager...");
     initializeWiFiManager();
     
     // Initialize web server after WiFi is connected
     if (wifiConnected) {
+        Serial.println("[INIT] Starting web server on port 80...");
         server = new AsyncWebServer(80);
         initializeWebServer();
+        Serial.println("[WEB] Web server initialized successfully");
+    } else {
+        Serial.println("[WARN] WiFi not connected - web server not started");
     }
     
-    Serial.println("Setup complete!");
-    Serial.println("Device Name: " + String(customDeviceName));
+    Serial.println("\n========================================");
+    Serial.println("  Setup Complete!");
+    Serial.println("========================================");
+    Serial.println("[INFO] Device Name: " + String(customDeviceName));
+    Serial.println("[INFO] Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
+    Serial.println("[INFO] System ready for operation\n");
 }
 
 void loop() {
@@ -80,10 +100,37 @@ void loop() {
     yield();
 }
 
+// Periodic status logging (called every 60 seconds via timer)
+void logSystemStatus() {
+    static unsigned long lastStatusLog = 0;
+    unsigned long currentMillis = millis();
+    
+    if (currentMillis - lastStatusLog >= 60000) {
+        lastStatusLog = currentMillis;
+        Serial.println("\n[STATUS] === System Status Report ===");
+        Serial.println("[STATUS] Uptime: " + String(currentMillis / 1000) + " seconds");
+        Serial.println("[STATUS] Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
+        Serial.println("[STATUS] WiFi Status: " + String(WiFi.isConnected() ? "Connected" : "Disconnected"));
+        if (WiFi.isConnected()) {
+            Serial.println("[STATUS] IP Address: " + WiFi.localIP().toString());
+            Serial.println("[STATUS] RSSI: " + String(WiFi.RSSI()) + " dBm");
+        }
+        
+        // Count active outputs
+        int activeCount = 0;
+        for (int i = 0; i < MAX_OUTPUTS; i++) {
+            if (outputStates[i]) activeCount++;
+        }
+        Serial.println("[STATUS] Active Outputs: " + String(activeCount) + "/" + String(MAX_OUTPUTS));
+        Serial.println("[STATUS] ========================\n");
+    }
+}
+
 void initializeOutputs() {
-    Serial.println("Initializing outputs...");
+    Serial.println("[OUTPUT] Initializing outputs...");
     
     for (int i = 0; i < MAX_OUTPUTS; i++) {
+        Serial.print("[OUTPUT] Configuring Output " + String(i) + " on GPIO " + String(outputPins[i]));
         pinMode(outputPins[i], OUTPUT);
         digitalWrite(outputPins[i], LOW);
         
@@ -91,11 +138,14 @@ void initializeOutputs() {
         ledcSetup(i, 5000, 8); // 5kHz frequency, 8-bit resolution
         ledcAttachPin(outputPins[i], i);
         ledcWrite(i, 0);
+        Serial.println(" - OK (PWM Ch" + String(i) + ", 5kHz, 8-bit)");
     }
     
     // Status LED
+    Serial.println("[OUTPUT] Initializing status LED on GPIO " + String(STATUS_LED_PIN));
     pinMode(STATUS_LED_PIN, OUTPUT);
     digitalWrite(STATUS_LED_PIN, HIGH); // Turn on status LED
+    Serial.println("[OUTPUT] All outputs initialized successfully");
 }
 
 void initializeWiFi() {
@@ -147,7 +197,9 @@ void initializeWiFi() {
 }
 
 void initializeWiFiManager() {
-    Serial.println("Initializing WiFiManager...");
+    Serial.println("[WIFI] Initializing WiFiManager...");
+    Serial.println("[WIFI] Configuration Portal SSID: " + String(WIFIMANAGER_AP_SSID));
+    Serial.println("[WIFI] Portal Trigger Pin: GPIO " + String(PORTAL_TRIGGER_PIN));
     
     // Ensure WiFi is in correct mode
     WiFi.mode(WIFI_STA);
@@ -342,7 +394,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set save config callback
     wifiManager.setSaveConfigCallback([]() {
-        Serial.println("Configuration saved!");
+        Serial.println("[WIFI] Configuration saved!");
+        Serial.print("[WIFI] Device Name: ");
+        Serial.println(customDeviceName);
+        Serial.println("[WIFI] WiFi credentials will be used on next boot");
     });
     
     // Set configuration portal timeout (0 = no timeout for easier mobile config)
@@ -353,13 +408,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set AP callback
     wifiManager.setAPCallback([](AsyncWiFiManager *myWiFiManager) {
-        Serial.println("\n=== Entered Config Mode ===");
-        Serial.println("AP IP: " + WiFi.softAPIP().toString());
-        Serial.println("AP SSID: " + String(WIFIMANAGER_AP_SSID));
-        Serial.println("AP Password: " + String(WIFIMANAGER_AP_PASSWORD));
-        Serial.println("Connect to this AP and navigate to 192.168.4.1");
-        Serial.println("Portal is running on port 80");
-        Serial.println("===========================\n");
+        Serial.println("\n========================================");
+        Serial.println("     CONFIGURATION MODE ACTIVE");
+        Serial.println("========================================");
+        Serial.println("[WIFI] AP Mode Started");
+        Serial.println("[WIFI] AP SSID: " + String(WIFIMANAGER_AP_SSID));
+        Serial.println("[WIFI] AP Password: " + String(WIFIMANAGER_AP_PASSWORD));
+        Serial.println("[WIFI] AP IP Address: " + WiFi.softAPIP().toString());
+        Serial.println("[WIFI] Configuration Portal: http://192.168.4.1");
+        Serial.println("[INFO] Connect your device to the AP above");
+        Serial.println("[INFO] Portal running on port 80");
+        Serial.println("========================================\n");
         
         // Blink LED to indicate config mode
         for (int i = 0; i < 10; i++) {
@@ -376,20 +435,35 @@ document.addEventListener('DOMContentLoaded', function() {
     wifiManager.setAPStaticIPConfig(portal_ip, portal_gateway, portal_subnet);
     
     // Try to connect with saved credentials or start portal
-    Serial.println("Attempting to connect to WiFi...");
+    Serial.println("[WIFI] Attempting to connect to WiFi...");
+    Serial.print("[WIFI] Config AP SSID: ");
+    Serial.println(WIFIMANAGER_AP_SSID);
     
     // Use NULL for open AP if password is empty, otherwise use the password
     const char* apPassword = (strlen(WIFIMANAGER_AP_PASSWORD) == 0) ? NULL : WIFIMANAGER_AP_PASSWORD;
     
+    unsigned long connectStart = millis();
     if (wifiManager.autoConnect(WIFIMANAGER_AP_SSID, apPassword)) {
         // Connected to WiFi successfully
+        unsigned long connectDuration = millis() - connectStart;
         wifiConnected = true;
-        Serial.println("\n=== Connected to WiFi! ===");
-        Serial.print("IP address: ");
+        
+        Serial.println("\n========================================");
+        Serial.println("     WIFI CONNECTION SUCCESSFUL");
+        Serial.println("========================================");
+        Serial.print("[WIFI] IP Address: ");
         Serial.println(WiFi.localIP());
-        Serial.print("SSID: ");
+        Serial.print("[WIFI] SSID: ");
         Serial.println(WiFi.SSID());
-        Serial.println("===========================\n");
+        Serial.print("[WIFI] Signal Strength: ");
+        Serial.print(WiFi.RSSI());
+        Serial.println(" dBm");
+        Serial.print("[WIFI] MAC Address: ");
+        Serial.println(WiFi.macAddress());
+        Serial.print("[WIFI] Connection Time: ");
+        Serial.print(connectDuration);
+        Serial.println("ms");
+        Serial.println("========================================\n");
         
         // Get custom parameters
         strncpy(customDeviceName, custom_device_name.getValue(), 40);
@@ -399,7 +473,7 @@ document.addEventListener('DOMContentLoaded', function() {
         digitalWrite(STATUS_LED_PIN, HIGH);
     } else {
         // Failed to connect - fallback to AP mode
-        Serial.println("Failed to connect - starting fallback AP mode");
+        Serial.println("[ERROR] Failed to connect - starting fallback AP mode");
         wifiConnected = false;
         initializeWiFi();
     }
@@ -410,56 +484,121 @@ void checkConfigPortalTrigger() {
     if (digitalRead(PORTAL_TRIGGER_PIN) == LOW) {
         if (portalButtonPressTime == 0) {
             portalButtonPressTime = millis();
-        } else if (millis() - portalButtonPressTime > PORTAL_TRIGGER_DURATION && !portalRunning) {
-            Serial.println("Portal trigger detected! Resetting WiFi and restarting...");
-            portalRunning = true;
+            Serial.println("[PORTAL] Config button pressed (hold for 3s to trigger)");
+        } else {
+            unsigned long holdDuration = millis() - portalButtonPressTime;
             
-            // Blink LED rapidly
-            for (int i = 0; i < 20; i++) {
-                digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
-                delay(50);
+            // Warning at 2.5 seconds
+            if (holdDuration > 2500 && holdDuration < 2600 && !portalRunning) {
+                Serial.println("[PORTAL] Warning: Portal trigger in 0.5s...");
             }
             
-            // Clear WiFi credentials from preferences
-            preferences.begin("railhub32", false);
-            preferences.remove("wifi_ssid");
-            preferences.remove("wifi_pass");
-            preferences.end();
-            
-            // Clear ESP32 WiFi settings
-            WiFi.disconnect(true, true);
-            delay(1000);
-            
-            // Restart to trigger portal
-            ESP.restart();
+            if (holdDuration > PORTAL_TRIGGER_DURATION && !portalRunning) {
+                Serial.println("[PORTAL] Portal trigger detected! Resetting WiFi and restarting...");
+                Serial.print("[PORTAL] Free heap before reset: ");
+                Serial.print(ESP.getFreeHeap());
+                Serial.println(" bytes");
+                portalRunning = true;
+                
+                // Blink LED rapidly
+                Serial.println("[PORTAL] Blinking status LED (confirmation)");
+                for (int i = 0; i < 20; i++) {
+                    digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+                    delay(50);
+                }
+                
+                // Clear WiFi credentials from preferences
+                Serial.println("[PORTAL] Clearing WiFi credentials from NVRAM...");
+                if (!preferences.begin("railhub32", false)) {
+                    Serial.println("[ERROR] Failed to open preferences for credential removal");
+                } else {
+                    preferences.remove("wifi_ssid");
+                    preferences.remove("wifi_pass");
+                    preferences.end();
+                    Serial.println("[PORTAL] WiFi credentials cleared");
+                }
+                
+                // Clear ESP32 WiFi settings
+                Serial.println("[PORTAL] Disconnecting WiFi and clearing saved networks...");
+                WiFi.disconnect(true, true);
+                delay(1000);
+                
+                // Restart to trigger portal
+                Serial.println("[PORTAL] Restarting ESP32 in 1s...");
+                Serial.flush();
+                delay(1000);
+                ESP.restart();
+            }
         }
     } else {
+        if (portalButtonPressTime > 0) {
+            unsigned long pressDuration = millis() - portalButtonPressTime;
+            Serial.print("[PORTAL] Config button released after ");
+            Serial.print(pressDuration);
+            Serial.println("ms (trigger requires 3000ms)");
+        }
         portalButtonPressTime = 0;
         portalRunning = false;
     }
 }
 
 void saveCustomParameters() {
-    Serial.println("Saving custom parameters...");
-    preferences.begin("railhub32", false);
-    preferences.putString("deviceName", customDeviceName);
+    Serial.println("[NVRAM] Saving custom parameters...");
+    
+    if (!preferences.begin("railhub32", false)) {
+        Serial.println("[ERROR] Failed to open preferences for saving custom parameters");
+        return;
+    }
+    
+    size_t written = preferences.putString("deviceName", customDeviceName);
     preferences.end();
-    Serial.println("Custom parameters saved: " + String(customDeviceName));
+    
+    if (written > 0) {
+        Serial.print("[NVRAM] Custom parameters saved: Device Name = '");
+        Serial.print(customDeviceName);
+        Serial.print("' (");
+        Serial.print(written);
+        Serial.println(" bytes)");
+    } else {
+        Serial.println("[ERROR] Failed to save custom parameters");
+    }
 }
 
 void loadCustomParameters() {
-    Serial.println("Loading custom parameters...");
-    preferences.begin("railhub32", true);
+    Serial.println("[NVRAM] Loading custom parameters...");
+    
+    if (!preferences.begin("railhub32", true)) {
+        Serial.println("[ERROR] Failed to open preferences for loading custom parameters");
+        strncpy(customDeviceName, DEVICE_NAME, 40);
+        customDeviceName[39] = '\0';
+        Serial.print("[NVRAM] Using default device name: '");
+        Serial.print(customDeviceName);
+        Serial.println("'");
+        return;
+    }
+    
     String savedName = preferences.getString("deviceName", DEVICE_NAME);
     preferences.end();
     
     strncpy(customDeviceName, savedName.c_str(), 40);
     customDeviceName[39] = '\0'; // Ensure null termination
     
-    Serial.println("Loaded device name: " + String(customDeviceName));
+    if (savedName == DEVICE_NAME) {
+        Serial.print("[NVRAM] No custom device name found, using default: '");
+        Serial.print(customDeviceName);
+        Serial.println("'");
+    } else {
+        Serial.print("[NVRAM] Loaded custom device name: '");
+        Serial.print(customDeviceName);
+        Serial.print("' (");
+        Serial.print(savedName.length());
+        Serial.println(" chars)");
+    }
 }
 
 void executeOutputCommand(int pin, bool active, int brightnessPercent) {
+    unsigned long startTime = millis();
+    
     // Find the output index for the given pin
     int outputIndex = -1;
     for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -470,8 +609,14 @@ void executeOutputCommand(int pin, bool active, int brightnessPercent) {
     }
     
     if (outputIndex == -1) {
-        Serial.println("Invalid pin: " + String(pin));
+        Serial.println("[ERROR] Invalid GPIO pin: " + String(pin));
         return;
+    }
+    
+    // Validate brightness range
+    if (brightnessPercent < 0 || brightnessPercent > 100) {
+        Serial.println("[ERROR] Invalid brightness: " + String(brightnessPercent) + "% (must be 0-100)");
+        brightnessPercent = constrain(brightnessPercent, 0, 100);
     }
     
     // Update state
@@ -488,44 +633,97 @@ void executeOutputCommand(int pin, bool active, int brightnessPercent) {
     // Save the state to persistent storage
     saveOutputState(outputIndex);
     
-    Serial.println("Output " + String(pin) + " set to " + (active ? "ON" : "OFF") + 
-                  " with brightness " + String(brightnessPercent) + "% [SAVED]");
+    unsigned long duration = millis() - startTime;
+    String nameStr = outputNames[outputIndex].length() > 0 ? " [" + outputNames[outputIndex] + "]" : "";
+    Serial.println("[CMD] Output " + String(outputIndex) + " (GPIO " + String(pin) + ")" + nameStr + ": " + 
+                   (active ? "ON" : "OFF") + " @ " + String(brightnessPercent) + "% (" + String(duration) + "ms)");
 }
 
 void saveOutputState(int index) {
     if (index < 0 || index >= MAX_OUTPUTS) {
+        Serial.print("[ERROR] Invalid output index for state save: ");
+        Serial.println(index);
         return;
     }
     
-    preferences.begin("railhub32", false);
+    if (!preferences.begin("railhub32", false)) {
+        Serial.print("[ERROR] Failed to open preferences for saving Output ");
+        Serial.println(index);
+        return;
+    }
     
     // Create keys for state and brightness
     String stateKey = "out_" + String(index) + "_s";
     String brightKey = "out_" + String(index) + "_b";
     
-    preferences.putBool(stateKey.c_str(), outputStates[index]);
-    preferences.putUChar(brightKey.c_str(), outputBrightness[index]);
+    size_t stateWritten = preferences.putBool(stateKey.c_str(), outputStates[index]);
+    size_t brightWritten = preferences.putUChar(brightKey.c_str(), outputBrightness[index]);
     
     preferences.end();
+    
+    if (stateWritten > 0 && brightWritten > 0) {
+        Serial.print("[NVRAM] Saved state for Output ");
+        Serial.print(index);
+        Serial.print(" (GPIO ");
+        Serial.print(outputPins[index]);
+        Serial.print("): ");
+        Serial.print(outputStates[index] ? "ON" : "OFF");
+        Serial.print(" @ ");
+        Serial.print(outputBrightness[index]);
+        Serial.println(" PWM");
+    } else {
+        Serial.print("[ERROR] Failed to save state for Output ");
+        Serial.println(index);
+    }
 }
 
 void saveOutputName(int index, String name) {
     if (index < 0 || index >= MAX_OUTPUTS) {
+        Serial.println("[ERROR] Invalid output index for name save: " + String(index));
         return;
     }
     
-    preferences.begin("railhub32", false);
+    if (!preferences.begin("railhub32", false)) {
+        Serial.println("[ERROR] Failed to open preferences for name save");
+        return;
+    }
+    
     String nameKey = "out_" + String(index) + "_n";
-    preferences.putString(nameKey.c_str(), name);
+    
+    // If name is empty, remove the preference key
+    if (name.length() == 0 || name.trim().length() == 0) {
+        bool removed = preferences.remove(nameKey.c_str());
+        preferences.end();
+        outputNames[index] = "";
+        if (removed) {
+            Serial.println("[NVRAM] Removed custom name for Output " + String(index) + " (GPIO " + String(outputPins[index]) + ") - using default");
+        } else {
+            Serial.println("[NVRAM] No custom name to remove for Output " + String(index));
+        }
+        return;
+    }
+    
+    size_t written = preferences.putString(nameKey.c_str(), name);
     preferences.end();
     
-    outputNames[index] = name;
-    Serial.println("Saved name for output " + String(index) + ": " + name);
+    if (written > 0) {
+        outputNames[index] = name;
+        Serial.println("[NVRAM] Saved name for Output " + String(index) + " (GPIO " + String(outputPins[index]) + "): '" + name + "' (" + String(written) + " bytes)");
+    } else {
+        Serial.println("[ERROR] Failed to save name for output " + String(index));
+    }
 }
 
 void loadOutputStates() {
-    Serial.println("Loading saved output states from NVRAM...");
-    preferences.begin("railhub32", true); // Read-only mode
+    Serial.println("[NVRAM] Loading saved output states...");
+    
+    if (!preferences.begin("railhub32", true)) {
+        Serial.println("[ERROR] Failed to open preferences in read-only mode");
+        return;
+    }
+    
+    int loadedCount = 0;
+    int namedCount = 0;
     
     for (int i = 0; i < MAX_OUTPUTS; i++) {
         String stateKey = "out_" + String(i) + "_s";
@@ -540,35 +738,68 @@ void loadOutputStates() {
         
         // Load custom name (default to empty string)
         outputNames[i] = preferences.getString(nameKey.c_str(), "");
+        if (outputNames[i].length() > 0) {
+            namedCount++;
+        }
         
         // Apply the loaded state to the output
         if (outputStates[i]) {
             ledcWrite(i, outputBrightness[i]);
-            Serial.println("  Output " + String(i) + " (Pin " + String(outputPins[i]) + "): ON, Brightness: " + String(map(outputBrightness[i], 0, 255, 0, 100)) + "%");
+            int brightPercent = map(outputBrightness[i], 0, 255, 0, 100);
+            Serial.print("[NVRAM] Output " + String(i) + " (GPIO " + String(outputPins[i]) + "): ON @ " + String(brightPercent) + "%");
+            if (outputNames[i].length() > 0) {
+                Serial.println(" [Name: " + outputNames[i] + "]");
+            } else {
+                Serial.println("");
+            }
+            loadedCount++;
         } else {
             ledcWrite(i, 0);
-            Serial.println("  Output " + String(i) + " (Pin " + String(outputPins[i]) + "): OFF");
         }
     }
     
     preferences.end();
-    Serial.println("Output states loaded successfully!");
+    Serial.println("[NVRAM] Loaded " + String(loadedCount) + " active outputs, " + String(namedCount) + " custom names");
 }
 
 void saveAllOutputStates() {
-    Serial.println("Saving all output states to NVRAM...");
-    preferences.begin("railhub32", false);
+    unsigned long startTime = millis();
+    Serial.println("[NVRAM] Saving all output states (batch operation)...");
+    
+    if (!preferences.begin("railhub32", false)) {
+        Serial.println("[ERROR] Failed to open preferences for batch save");
+        return;
+    }
+    
+    int savedCount = 0;
+    int failedCount = 0;
     
     for (int i = 0; i < MAX_OUTPUTS; i++) {
         String stateKey = "out_" + String(i) + "_s";
         String brightKey = "out_" + String(i) + "_b";
         
-        preferences.putBool(stateKey.c_str(), outputStates[i]);
-        preferences.putUChar(brightKey.c_str(), outputBrightness[i]);
+        size_t stateWritten = preferences.putBool(stateKey.c_str(), outputStates[i]);
+        size_t brightWritten = preferences.putUChar(brightKey.c_str(), outputBrightness[i]);
+        
+        if (stateWritten > 0 && brightWritten > 0) {
+            savedCount++;
+        } else {
+            failedCount++;
+            Serial.print("[ERROR] Failed to save Output ");
+            Serial.println(i);
+        }
     }
     
     preferences.end();
-    Serial.println("All output states saved successfully!");
+    
+    unsigned long duration = millis() - startTime;
+    Serial.print("[NVRAM] Batch save complete: ");
+    Serial.print(savedCount);
+    Serial.print(" outputs saved, ");
+    Serial.print(failedCount);
+    Serial.print(" failed (");
+    Serial.print(duration);
+    Serial.println("ms)");
 }
 
 void initializeWebServer() {
@@ -1189,6 +1420,12 @@ void initializeWebServer() {
 
         // Load outputs
         async function loadOutputs() {
+            // Don't update if user is editing a name
+            const activeElement = document.activeElement;
+            if (activeElement && activeElement.id && activeElement.id.startsWith('name-input-')) {
+                return;
+            }
+            
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1208,14 +1445,17 @@ void initializeWebServer() {
                 
                 data.outputs.forEach((output, index) => {
                     const t = translations[currentLang].outputs;
-                    const displayName = output.name || `${t.output} ${index + 1}`;
+                    // Use default name from current language if output name is empty
+                    const displayName = (output.name && output.name.trim() !== '') ? output.name : `${t.output} ${index + 1}`;
+                    // Store the actual value from server (empty string if no custom name)
+                    const inputValue = output.name || '';
                     const card = document.createElement('div');
                     card.className = 'output-card' + (output.active ? ' active' : '');
                     card.innerHTML = `
                         <div class="output-header">
-                            <div class="output-name" id="name-display-${output.pin}" onclick="editOutputName(${output.pin}, '${output.name}')">${displayName}</div>
+                            <div class="output-name" id="name-display-${output.pin}" onclick="editOutputName(${output.pin}, '${inputValue}', ${index})">${displayName}</div>
                             <div class="output-name-edit" id="name-edit-${output.pin}" style="display: none;">
-                                <input type="text" id="name-input-${output.pin}" value="${output.name}" maxlength="20" style="width: 130px; padding: 4px; background: var(--color-bg-tertiary); border: 1px solid var(--color-border); color: var(--color-text-primary); border-radius: 4px;">
+                                <input type="text" id="name-input-${output.pin}" value="${inputValue}" placeholder="${t.output} ${index + 1}" maxlength="20" style="width: 130px; padding: 4px; background: var(--color-bg-tertiary); border: 1px solid var(--color-border); color: var(--color-text-primary); border-radius: 4px;">
                                 <button onclick="saveOutputName(${output.pin})" style="padding: 4px 8px; margin-left: 4px; background: var(--color-success); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 11px;">${t.saveName}</button>
                                 <button onclick="cancelEditName(${output.pin})" style="padding: 4px 8px; margin-left: 2px; background: var(--color-danger); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 11px;">${t.cancelEdit}</button>
                             </div>
@@ -1380,11 +1620,12 @@ void initializeWebServer() {
         });
 
         // Output name editing functions
-        function editOutputName(pin, currentName) {
+        function editOutputName(pin, currentName, index) {
             document.getElementById(`name-display-${pin}`).style.display = 'none';
             document.getElementById(`name-edit-${pin}`).style.display = 'block';
-            document.getElementById(`name-input-${pin}`).focus();
-            document.getElementById(`name-input-${pin}`).select();
+            const inputField = document.getElementById(`name-input-${pin}`);
+            inputField.focus();
+            inputField.select();
         }
 
         function cancelEditName(pin) {
@@ -1427,13 +1668,13 @@ void initializeWebServer() {
             loadOutputs();
         }
 
-        // Auto-refresh every 5 seconds
+        // Auto-refresh every 0.5 seconds
         setInterval(() => {
             loadStatus();
             if (document.getElementById('outputsContent').classList.contains('active')) {
                 loadOutputs();
             }
-        }, 5000);
+        }, 500);
     </script>
 </body>
 </html>
@@ -1444,6 +1685,11 @@ void initializeWebServer() {
     
     // API endpoint for status
     server->on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        unsigned long startTime = millis();
+        IPAddress clientIP = request->client()->remoteIP();
+        Serial.print("[WEB] GET /api/status from ");
+        Serial.println(clientIP.toString());
+        
         DynamicJsonDocument doc(2048);
         doc["macAddress"] = macAddress;
         doc["name"] = customDeviceName;
@@ -1465,22 +1711,46 @@ void initializeWebServer() {
         
         String response;
         serializeJson(doc, response);
+        
+        unsigned long duration = millis() - startTime;
+        Serial.print("[WEB] Status response: ");
+        Serial.print(response.length());
+        Serial.print(" bytes, ");
+        Serial.print(duration);
+        Serial.println("ms");
+        
         request->send(200, "application/json", response);
     });
     
     // API endpoint for updating output name
     server->on("/api/name", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        unsigned long startTime = millis();
+        IPAddress clientIP = request->client()->remoteIP();
+        Serial.print("[WEB] POST /api/name from ");
+        Serial.print(clientIP.toString());
+        Serial.print(" (");
+        Serial.print(len);
+        Serial.println(" bytes)");
+        
         DynamicJsonDocument doc(512);
         DeserializationError error = deserializeJson(doc, (const char*)data);
         
         if (error) {
+            Serial.print("[ERROR] JSON deserialization failed: ");
+            Serial.println(error.c_str());
             request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
             return;
         }
         
         int pin = doc["pin"];
         String name = doc["name"].as<String>();
+        
+        Serial.print("[WEB] Name update request: GPIO ");
+        Serial.print(pin);
+        Serial.print(" -> '");
+        Serial.print(name);
+        Serial.println("'");
         
         // Find output index by pin
         int outputIndex = -1;
@@ -1493,19 +1763,35 @@ void initializeWebServer() {
         
         if (outputIndex >= 0) {
             saveOutputName(outputIndex, name);
+            unsigned long duration = millis() - startTime;
+            Serial.print("[WEB] Name update complete (");
+            Serial.print(duration);
+            Serial.println("ms)");
             request->send(200, "application/json", "{\"success\":true}");
         } else {
+            Serial.print("[ERROR] GPIO pin not found: ");
+            Serial.println(pin);
             request->send(404, "application/json", "{\"error\":\"Output not found\"}");
         }
     });
     
     // API endpoint for control
-    server->on("/api/control", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, 
+    server->on("/api/control", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        unsigned long startTime = millis();
+        IPAddress clientIP = request->client()->remoteIP();
+        Serial.print("[WEB] POST /api/control from ");
+        Serial.print(clientIP.toString());
+        Serial.print(" (");
+        Serial.print(len);
+        Serial.println(" bytes)");
+        
         DynamicJsonDocument doc(1024);
         DeserializationError error = deserializeJson(doc, (const char*)data);
         
         if (error) {
+            Serial.print("[ERROR] JSON deserialization failed: ");
+            Serial.println(error.c_str());
             request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
             return;
         }
@@ -1514,21 +1800,57 @@ void initializeWebServer() {
         bool active = doc["active"];
         int brightness = doc["brightness"] | 100;
         
+        Serial.print("[WEB] Control request: GPIO ");
+        Serial.print(pin);
+        Serial.print(" -> ");
+        Serial.print(active ? "ON" : "OFF");
+        Serial.print(" @ ");
+        Serial.print(brightness);
+        Serial.println("%");
+        
         executeOutputCommand(pin, active, brightness);
+        
+        unsigned long duration = millis() - startTime;
+        Serial.print("[WEB] Control complete (");
+        Serial.print(duration);
+        Serial.println("ms)");
         
         request->send(200, "application/json", "{\"status\":\"ok\"}");
     });
     
     // API endpoint to reset saved states
     server->on("/api/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
-        Serial.println("Resetting all saved states...");
-        preferences.begin("railhub32", false);
+        IPAddress clientIP = request->client()->remoteIP();
+        Serial.print("[WEB] POST /api/reset from ");
+        Serial.println(clientIP.toString());
+        Serial.println("[NVRAM] Resetting all saved states...");
+        Serial.print("[NVRAM] Free heap before reset: ");
+        Serial.print(ESP.getFreeHeap());
+        Serial.println(" bytes");
+        
+        if (!preferences.begin("railhub32", false)) {
+            Serial.println("[ERROR] Failed to open preferences for reset");
+            request->send(500, "application/json", "{\"error\":\"Reset failed\"}");
+            return;
+        }
+        
         preferences.clear(); // Clear all saved preferences
         preferences.end();
-        Serial.println("All saved states cleared!");
+        
+        Serial.println("[NVRAM] All saved states cleared!");
+        Serial.print("[NVRAM] Free heap after reset: ");
+        Serial.print(ESP.getFreeHeap());
+        Serial.println(" bytes");
+        
         request->send(200, "application/json", "{\"status\":\"reset_complete\"}");
     });
     
     server->begin();
-    Serial.println("Web server started on port 80");
+    Serial.println("[WEB] Web server started on port 80");
+    Serial.println("[WEB] Available endpoints:");
+    Serial.println("[WEB]   GET  /              - Main control interface");
+    Serial.println("[WEB]   GET  /api/status    - System and output status");
+    Serial.println("[WEB]   POST /api/control   - Control output state/brightness");
+    Serial.println("[WEB]   POST /api/name      - Update output name");
+    Serial.println("[WEB]   POST /api/reset     - Reset all saved preferences");
 }
