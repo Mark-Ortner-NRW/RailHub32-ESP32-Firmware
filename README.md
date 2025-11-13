@@ -10,26 +10,32 @@ Advanced firmware for ESP32-based model railway control system with Access Point
 
 ### Core Functionality
 - **16 PWM Output Channels** - Control lighting, signals, and other railway accessories
-- **Access Point Mode** - ESP32 creates its own WiFi network for direct device connection
+- **WiFi Configuration Portal** - Easy WiFi setup with captive portal interface
+- **Station & Access Point Modes** - Connect to existing WiFi or create standalone network
 - **Web-Based Interface** - Modern, responsive control panel accessible from any browser
-- **MQTT Support** - Integration with home automation systems and external controllers
-- **Persistent Storage** - Output states and brightness levels saved to NVRAM
-- **Real-time Control** - Instant response to commands via web interface or MQTT
+- **Persistent Storage** - Output states, brightness levels, and custom names saved to NVRAM
+- **Real-time Control** - Instant response to commands via web interface
+- **Custom Output Names** - Editable, persistent names for each output
 
 ### Web Interface Features
 - **Master Brightness Control** - Adjust all outputs simultaneously
 - **Individual Output Control** - Fine-tune each output independently
+- **Editable Output Names** - Click any output name to customize it (persists across reboots)
 - **Multi-Language Support** - Available in English, German, French, Italian, Chinese, and Hindi
 - **Persistent Preferences** - Language and tab selection saved in browser
-- **Status Monitoring** - Real-time display of IP address, connected clients, uptime, and memory usage
+- **Status Monitoring** - Real-time display of IP address, WiFi status, uptime, and memory usage
 - **Dark Theme** - Professional, easy-on-the-eyes interface design
+- **Auto-Redirect** - Automatic redirect to control panel after WiFi configuration
+- **Train Emoji Favicon** - Easy identification in browser tabs (🚂)
 
 ### Technical Highlights
 - **Asynchronous Web Server** - Non-blocking operation for smooth performance
+- **WiFiManager Integration** - ESPAsyncWiFiManager for easy configuration
 - **JSON API** - RESTful endpoints for programmatic control
 - **PWM Control** - 8-bit brightness resolution (0-255) for smooth dimming
-- **Low Memory Footprint** - Efficient resource usage (~14% RAM, ~66% Flash)
-- **OTA Ready** - Architecture supports over-the-air updates
+- **Low Memory Footprint** - Efficient resource usage (~14% RAM, ~67.6% Flash)
+- **Optimized Performance** - Debug output disabled for faster web interface response
+- **Configuration Portal** - Password-protected setup at 192.168.4.1
 
 ## 📋 Hardware Requirements
 
@@ -157,18 +163,15 @@ cd RailWays/firmware/esp32-controller
 Edit `include/config.h` to customize:
 
 ```cpp
-// WiFi Access Point Configuration
-#define AP_SSID "RailHub32-AP"           // Your network name
-#define AP_PASSWORD "RailHub32Pass"      // Your password (min 8 chars)
-#define AP_LOCAL_IP "192.168.4.1"        // ESP32 IP address
-
-// MQTT Configuration (optional)
-#define MQTT_BROKER "192.168.4.100"      // MQTT broker IP
-#define MQTT_PORT 1883
+// WiFi Configuration Portal
+#define WIFIMANAGER_AP_SSID "RailHub32-Setup"     // Configuration portal SSID
+#define WIFIMANAGER_AP_PASSWORD "12345678"        // Portal password (min 8 chars)
+#define PORTAL_TRIGGER_PIN 0                      // Button to trigger config portal
 
 // Device Configuration
 #define DEVICE_NAME "ESP32-Controller-01"
 #define MAX_OUTPUTS 16
+#define STATUS_LED_PIN 2
 
 // Pin Definitions
 #define LED_PINS {2, 4, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 12, 13, 14}
@@ -185,12 +188,28 @@ Using PlatformIO IDE:
 - Open project in VS Code
 - Click "Upload" button in PlatformIO toolbar
 
-### 4. Connect
+### 4. First-Time WiFi Setup
 
-1. **Find the Network**: Look for WiFi network `RailHub32-AP`
-2. **Connect**: Use password `RailHub32Pass` (minimum 8 characters)
-3. **Open Browser**: Navigate to `http://192.168.4.1`
-4. **Control**: Start controlling your railway!
+On first boot, the ESP32 automatically enters configuration mode:
+
+1. **Find the Network**: Look for WiFi network `RailHub32-Setup`
+2. **Connect**: Use password `12345678`
+3. **Configure WiFi**: 
+   - Browser should automatically open to http://192.168.4.1
+   - If not, manually navigate to http://192.168.4.1
+   - Select your WiFi network from the list
+   - Enter your WiFi password
+   - Click Save
+4. **Auto-Redirect**: After successful connection, you'll be automatically redirected to the control panel
+
+### 5. Using the Control Panel
+
+Once connected to your WiFi network:
+- The ESP32 will display its IP address on serial monitor
+- Navigate to the displayed IP address in your browser
+- Start controlling your railway outputs!
+
+**Reconfiguration**: Hold the configuration button (GPIO 0) for 3 seconds to re-enter setup mode
 
 **Note**: The ESP32 runs an HTTP server on port 80 for maximum compatibility with all devices and browsers.
 
@@ -217,16 +236,21 @@ Using PlatformIO IDE:
 ### Outputs Tab
 - **Master Brightness Control**: Adjust all active outputs at once
 - **Individual Controls**: Toggle and adjust each output separately
+- **Editable Names**: Click any output name to customize it
+  - Custom names persist across reboots
+  - Shows default name in selected language if not customized
+  - Max 20 characters per name
 - **Real-time Updates**: Automatic status refresh every 5 seconds
+- **Bulk Controls**: Turn all outputs ON or OFF at once
 
 ### Language Support
 Select your preferred language from the header:
-- 🇬🇧 English (EN)
-- 🇩🇪 German (DE)
-- 🇫🇷 French (FR)
-- 🇮🇹 Italian (IT)
-- 🇨🇳 Chinese (中文)
-- 🇮🇳 Hindi (हिं)
+- 🇬🇧 English (EN) - with "Edit Name", "Save", "Cancel" buttons
+- 🇩🇪 German (DE) - mit "Name bearbeiten", "Speichern", "Abbrechen"
+- 🇫🇷 French (FR) - avec "Modifier le nom", "Enregistrer", "Annuler"
+- 🇮🇹 Italian (IT) - con "Modifica nome", "Salva", "Annulla"
+- 🇨🇳 Chinese (中文) - 带有 "编辑名称"、"保存"、"取消"
+- 🇮🇳 Hindi (हिं) - "नाम संपादित करें", "सहेजें", "रद्द करें" के साथ
 
 ## 🔌 API Reference
 
@@ -240,22 +264,32 @@ GET /api/status
 **Response:**
 ```json
 {
-  "deviceId": "RailHub32-ESP32-9c9c1f189ebc",
   "macAddress": "9C:9C:1F:18:9E:BC",
   "name": "ESP32-Controller-01",
-  "ip": "192.168.4.1",
-  "apClients": 2,
+  "wifiMode": "STA",
+  "ip": "192.168.1.100",
+  "ssid": "YourWiFiNetwork",
+  "apClients": 0,
   "freeHeap": 248576,
   "uptime": 123456,
   "outputs": [
     {
       "pin": 2,
       "active": true,
-      "brightness": 75
+      "brightness": 75,
+      "name": "Station Light"
+    },
+    {
+      "pin": 4,
+      "active": false,
+      "brightness": 0,
+      "name": ""
     }
   ]
 }
 ```
+
+**Note**: The `name` field in outputs shows the custom name if set, or empty string for default names.
 
 #### Control Output
 ```http
@@ -279,6 +313,26 @@ Content-Type: application/json
 }
 ```
 
+#### Update Output Name
+```http
+POST /api/name
+Content-Type: application/json
+
+{
+  "pin": 2,
+  "name": "Station Light"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+Updates the custom name for the specified output. Name is stored in NVRAM and persists across reboots.
+
 #### Reset Saved States
 ```http
 POST /api/reset
@@ -293,27 +347,20 @@ POST /api/reset
 
 Clears all saved output states from persistent storage (NVRAM).
 
-### MQTT Topics
+### Configuration Portal
 
-#### Subscribe (Commands)
-```
-railhub32/device/[MAC_ADDRESS]/command
-```
+When in configuration mode, the ESP32 hosts a captive portal:
 
-**Payload:**
-```json
-{
-  "pin": 2,
-  "active": true,
-  "brightness": 80
-}
-```
-
-#### Publish (Status)
-```
-railhub32/device/[MAC_ADDRESS]/status
-railhub32/device/[MAC_ADDRESS]/discovery
-```
+**Access Point Details:**
+- **SSID**: RailHub32-Setup
+- **Password**: 12345678
+- **IP Address**: 192.168.4.1
+- **Features**: 
+  - WiFi network scanning
+  - Password-protected setup
+  - Custom device name configuration
+  - Automatic redirect after successful connection
+  - Train emoji favicon for easy identification
 
 ## 🛠️ Development
 
@@ -329,11 +376,11 @@ firmware/esp32-controller/
 ```
 
 ### Dependencies
-- `PubSubClient` @ 2.8.0 - MQTT client
-- `ArduinoJson` @ 7.4.2 - JSON parsing
-- `ESPAsyncWebServer` @ 3.6.0 - Async web server
-- `AsyncTCP` @ 3.3.2 - Async TCP library
-- `Preferences` @ 2.0.0 - NVRAM storage
+- `ArduinoJson` @ 7.4.2 - JSON parsing and serialization
+- `ESPAsyncWebServer` @ 3.6.0 - Asynchronous web server
+- `AsyncTCP` @ 3.3.2 - Asynchronous TCP library
+- `ESPAsyncWiFiManager` @ 0.31.0 - WiFi configuration manager
+- `Preferences` @ 2.0.0 - NVRAM persistent storage
 - `WiFi` @ 2.0.0 - WiFi management
 
 ### Building
@@ -352,51 +399,85 @@ platformio device monitor
 ```
 
 ### Memory Usage
-- **RAM**: ~45 KB (13.9% of 320 KB)
-- **Flash**: ~865 KB (66% of 1310 KB)
+- **RAM**: ~46 KB (14.0% of 320 KB)
+- **Flash**: ~887 KB (67.6% of 1310 KB)
+
+**Storage Breakdown:**
+- Application code and web interface
+- ESPAsyncWiFiManager with captive portal
+- Multi-language translations (6 languages)
+- Custom output names storage
+- Output states and brightness persistence
 
 ## 🐛 Troubleshooting
 
-### Cannot Connect to WiFi
+### Cannot Connect to Configuration Portal
 - Ensure ESP32 is powered on (status LED should be lit)
-- Check that WiFi is enabled on your device
-- Verify you're using the correct password
+- Look for WiFi network named `RailHub32-Setup`
+- Password is `12345678` (minimum 8 characters required)
+- If portal doesn't auto-open, manually navigate to http://192.168.4.1
 - Try forgetting the network and reconnecting
 
+### Configuration Portal Not Appearing
+- Hold the configuration button (GPIO 0) for 3 seconds to trigger portal
+- Serial monitor will show: "=== Entered Config Mode ==="
+- Check that no other device is connected to the configuration AP
+- Power cycle the ESP32 if it's stuck
+
 ### Web Interface Not Loading
-- Verify IP address: `192.168.4.1`
-- Check that you're connected to the ESP32's network
+- Check serial monitor for the assigned IP address
+- Ensure you're connected to the same WiFi network as the ESP32
+- If in config mode, use http://192.168.4.1
 - Clear browser cache
 - Try a different browser
+- Verify WiFi connection was successful (check serial output)
 
 ### Outputs Not Working
 - Verify correct GPIO pin connections
 - Check power supply to outputs
 - Review serial monitor for error messages
 - Ensure output states are properly configured
+- Check if custom names are saving (indicates NVRAM is working)
+
+### Custom Names Not Saving
+- Check serial monitor for "Saved name for output X: [name]" messages
+- NVRAM errors on first boot are normal (keys don't exist yet)
+- If names don't persist, NVRAM may be full (rare)
+- Try clearing all saved states via `/api/reset`
+
+### Page Performance Issues
+- Debug output is disabled by default for optimal performance
+- WiFi scanning is optimized (removed duplicate APs)
+- If slow, check serial monitor for unusual activity
+- Clear browser cache and refresh
 
 ### Upload Fails
 - Check USB cable connection
 - Verify correct COM port in `platformio.ini`
 - Press BOOT button on ESP32 during upload
+- Stop serial monitor before uploading
 - Try reducing upload speed
+- Use `Stop-Process -Name "pio"` on Windows if port is locked
 
 ## 📊 Performance
 
-- **Web Response Time**: < 50ms
+- **Web Response Time**: < 50ms (optimized with debug output disabled)
 - **Command Latency**: < 10ms
 - **PWM Frequency**: 5 kHz
-- **Status Update Interval**: 30 seconds (MQTT)
-- **UI Refresh Rate**: 5 seconds
+- **PWM Resolution**: 8-bit (0-255)
+- **UI Refresh Rate**: 5 seconds (auto-refresh)
+- **WiFi Scan**: Optimized (duplicates removed)
+- **Configuration Portal**: Password-protected, responsive interface
 
 ## 🔐 Security
 
-- **Default Credentials**: Change `AP_PASSWORD` in `config.h` before deployment (minimum 8 characters)
-- **Network Isolation**: AP mode creates isolated network separate from your main WiFi
+- **Default Credentials**: Change `WIFIMANAGER_AP_PASSWORD` in `config.h` before deployment (minimum 8 characters)
+- **Configuration Portal**: Password-protected setup mode (default: "12345678")
+- **WiFi Station Mode**: Connects to your existing WiFi network with your credentials
 - **HTTP Protocol**: Uses standard HTTP on port 80 for maximum device compatibility
 - **No Internet Required**: Fully functional offline system
-- **Local Storage**: All data stored securely on device NVRAM
-- **Password Protection**: WiFi access point is password-protected
+- **Local Storage**: All data (states, brightness, names) stored securely in device NVRAM
+- **No Cloud Dependencies**: Complete privacy - no data sent to external servers
 
 ## 🤝 Contributing
 
@@ -430,13 +511,21 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🗺️ Roadmap
 
+- [x] WiFi Configuration Portal with captive portal
+- [x] Custom editable output names (persistent)
+- [x] Multi-language support (6 languages)
+- [x] Performance optimization (debug output disabled)
+- [x] Auto-redirect after WiFi configuration
+- [x] Train emoji favicon
 - [ ] OTA (Over-The-Air) Updates
-- [ ] Scenario/Scene Management
+- [ ] Scenario/Scene Management  
 - [ ] Mobile App Integration
 - [ ] Advanced Scheduling
 - [ ] Multi-Device Synchronization
-- [ ] Web-based Configuration Editor
+- [ ] MQTT Integration (removed in current version)
 - [ ] Integration with DCC Systems
+- [ ] Backup/Restore Configuration
+- [ ] Output Groups/Zones
 
 ---
 

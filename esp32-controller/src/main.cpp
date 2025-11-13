@@ -34,6 +34,7 @@ bool wifiConnected = false;
 int outputPins[MAX_OUTPUTS] = LED_PINS;
 bool outputStates[MAX_OUTPUTS] = {false};
 int outputBrightness[MAX_OUTPUTS] = {255}; // 0-255 for PWM
+String outputNames[MAX_OUTPUTS]; // Custom names for outputs
 
 // Timing variables
 
@@ -508,6 +509,20 @@ void saveOutputState(int index) {
     preferences.end();
 }
 
+void saveOutputName(int index, String name) {
+    if (index < 0 || index >= MAX_OUTPUTS) {
+        return;
+    }
+    
+    preferences.begin("railhub32", false);
+    String nameKey = "out_" + String(index) + "_n";
+    preferences.putString(nameKey.c_str(), name);
+    preferences.end();
+    
+    outputNames[index] = name;
+    Serial.println("Saved name for output " + String(index) + ": " + name);
+}
+
 void loadOutputStates() {
     Serial.println("Loading saved output states from NVRAM...");
     preferences.begin("railhub32", true); // Read-only mode
@@ -515,12 +530,16 @@ void loadOutputStates() {
     for (int i = 0; i < MAX_OUTPUTS; i++) {
         String stateKey = "out_" + String(i) + "_s";
         String brightKey = "out_" + String(i) + "_b";
+        String nameKey = "out_" + String(i) + "_n";
         
         // Load state (default to false if not found)
         outputStates[i] = preferences.getBool(stateKey.c_str(), false);
         
         // Load brightness (default to 255 if not found)
         outputBrightness[i] = preferences.getUChar(brightKey.c_str(), 255);
+        
+        // Load custom name (default to empty string)
+        outputNames[i] = preferences.getString(nameKey.c_str(), "");
         
         // Apply the loaded state to the output
         if (outputStates[i]) {
@@ -775,6 +794,17 @@ void initializeWebServer() {
             font-weight: 400;
             color: var(--color-text-primary);
             letter-spacing: 0.02em;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .output-name:hover {
+            background: var(--color-bg-tertiary);
+        }
+        .output-name-edit {
+            display: flex;
+            align-items: center;
         }
         .output-status {
             padding: 5px 14px;
@@ -1033,37 +1063,37 @@ void initializeWebServer() {
                 nav: { status: 'Status', outputs: 'Outputs' },
                 buttons: { refresh: '🔄 Refresh', allOn: '💡 All On', allOff: '⚫ All Off' },
                 status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID' },
-                outputs: { master: 'Master Brightness Control', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', all: 'ALL', on: 'ON', off: 'OFF' }
+                outputs: { master: 'Master Brightness Control', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel' }
             },
             de: {
                 nav: { status: 'Status', outputs: 'Ausgänge' },
                 buttons: { refresh: '🔄 Aktualisieren', allOn: '💡 Alle Ein', allOff: '⚫ Alle Aus' },
                 status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID' },
-                outputs: { master: 'Master-Helligkeitssteuerung', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', all: 'ALLE', on: 'EIN', off: 'AUS' }
+                outputs: { master: 'Master-Helligkeitssteuerung', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen' }
             },
             fr: {
                 nav: { status: 'Statut', outputs: 'Sorties' },
                 buttons: { refresh: '🔄 Actualiser', allOn: '💡 Tous Allumés', allOff: '⚫ Tous Éteints' },
                 status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID' },
-                outputs: { master: 'Contrôle principal de la luminosité', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT' }
+                outputs: { master: 'Contrôle principal de la luminosité', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler' }
             },
             it: {
                 nav: { status: 'Stato', outputs: 'Uscite' },
                 buttons: { refresh: '🔄 Aggiorna', allOn: '💡 Tutti Accesi', allOff: '⚫ Tutti Spenti' },
                 status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID' },
-                outputs: { master: 'Controllo luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO' }
+                outputs: { master: 'Controllo luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla' }
             },
             zh: {
                 nav: { status: '状态', outputs: '输出' },
                 buttons: { refresh: '🔄 刷新', allOn: '💡 全部开启', allOff: '⚫ 全部关闭' },
                 status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID' },
-                outputs: { master: '主亮度控制', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', all: '全部', on: '开启', off: '关闭' }
+                outputs: { master: '主亮度控制', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消' }
             },
             hi: {
                 nav: { status: 'स्थिति', outputs: 'आउटपुट' },
                 buttons: { refresh: '🔄 रिफ्रेश', allOn: '💡 सभी चालू', allOff: '⚫ सभी बंद' },
                 status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID' },
-                outputs: { master: 'मास्टर चमक नियंत्रण', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', all: 'सभी', on: 'चालू', off: 'बंद' }
+                outputs: { master: 'मास्टर चमक नियंत्रण', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें' }
             }
         };
 
@@ -1178,11 +1208,17 @@ void initializeWebServer() {
                 
                 data.outputs.forEach((output, index) => {
                     const t = translations[currentLang].outputs;
+                    const displayName = output.name || `${t.output} ${index + 1}`;
                     const card = document.createElement('div');
                     card.className = 'output-card' + (output.active ? ' active' : '');
                     card.innerHTML = `
                         <div class="output-header">
-                            <div class="output-name">${t.output} ${index + 1}</div>
+                            <div class="output-name" id="name-display-${output.pin}" onclick="editOutputName(${output.pin}, '${output.name}')">${displayName}</div>
+                            <div class="output-name-edit" id="name-edit-${output.pin}" style="display: none;">
+                                <input type="text" id="name-input-${output.pin}" value="${output.name}" maxlength="20" style="width: 130px; padding: 4px; background: var(--color-bg-tertiary); border: 1px solid var(--color-border); color: var(--color-text-primary); border-radius: 4px;">
+                                <button onclick="saveOutputName(${output.pin})" style="padding: 4px 8px; margin-left: 4px; background: var(--color-success); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 11px;">${t.saveName}</button>
+                                <button onclick="cancelEditName(${output.pin})" style="padding: 4px 8px; margin-left: 2px; background: var(--color-danger); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 11px;">${t.cancelEdit}</button>
+                            </div>
                             <div class="output-status ${output.active ? 'on' : 'off'}" data-pin="${output.pin}">
                                 ${output.active ? t.on : t.off}
                             </div>
@@ -1343,6 +1379,44 @@ void initializeWebServer() {
             }
         });
 
+        // Output name editing functions
+        function editOutputName(pin, currentName) {
+            document.getElementById(`name-display-${pin}`).style.display = 'none';
+            document.getElementById(`name-edit-${pin}`).style.display = 'block';
+            document.getElementById(`name-input-${pin}`).focus();
+            document.getElementById(`name-input-${pin}`).select();
+        }
+
+        function cancelEditName(pin) {
+            document.getElementById(`name-display-${pin}`).style.display = 'block';
+            document.getElementById(`name-edit-${pin}`).style.display = 'none';
+        }
+
+        async function saveOutputName(pin) {
+            const newName = document.getElementById(`name-input-${pin}`).value.trim();
+            try {
+                const response = await fetch('/api/name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pin: pin,
+                        name: newName
+                    })
+                });
+                
+                if (response.ok) {
+                    await loadOutputs();
+                } else {
+                    alert('Failed to save name');
+                    cancelEditName(pin);
+                }
+            } catch (error) {
+                console.error('Error saving name:', error);
+                alert('Error saving name');
+                cancelEditName(pin);
+            }
+        }
+
         // Refresh buttons
         document.getElementById('refreshStatus').addEventListener('click', loadStatus);
         document.getElementById('refreshOutputs').addEventListener('click', loadOutputs);
@@ -1386,11 +1460,43 @@ void initializeWebServer() {
             output["pin"] = outputPins[i];
             output["active"] = outputStates[i];
             output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
+            output["name"] = outputNames[i];
         }
         
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
+    });
+    
+    // API endpoint for updating output name
+    server->on("/api/name", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        DynamicJsonDocument doc(512);
+        DeserializationError error = deserializeJson(doc, (const char*)data);
+        
+        if (error) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        int pin = doc["pin"];
+        String name = doc["name"].as<String>();
+        
+        // Find output index by pin
+        int outputIndex = -1;
+        for (int i = 0; i < MAX_OUTPUTS; i++) {
+            if (outputPins[i] == pin) {
+                outputIndex = i;
+                break;
+            }
+        }
+        
+        if (outputIndex >= 0) {
+            saveOutputName(outputIndex, name);
+            request->send(200, "application/json", "{\"success\":true}");
+        } else {
+            request->send(404, "application/json", "{\"error\":\"Output not found\"}");
+        }
     });
     
     // API endpoint for control
