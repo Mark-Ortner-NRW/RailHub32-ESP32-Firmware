@@ -336,6 +336,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set minimum signal quality to show networks (lower = show more networks)
     wifiManager.setMinimumSignalQuality(8);
     
+    // Configure WiFi scan settings to improve performance
+    wifiManager.setRemoveDuplicateAPs(true);
+    
     // Set save config callback
     wifiManager.setSaveConfigCallback([]() {
         Serial.println("Configuration saved!");
@@ -344,8 +347,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set configuration portal timeout (0 = no timeout for easier mobile config)
     wifiManager.setConfigPortalTimeout(0);
     
-    // Debug output
-    wifiManager.setDebugOutput(true);
+    // Disable debug output to improve web interface performance
+    wifiManager.setDebugOutput(false);
     
     // Set AP callback
     wifiManager.setAPCallback([](AsyncWiFiManager *myWiFiManager) {
@@ -374,7 +377,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Try to connect with saved credentials or start portal
     Serial.println("Attempting to connect to WiFi...");
     
-    if (wifiManager.autoConnect(WIFIMANAGER_AP_SSID, WIFIMANAGER_AP_PASSWORD)) {
+    // Use NULL for open AP if password is empty, otherwise use the password
+    const char* apPassword = (strlen(WIFIMANAGER_AP_PASSWORD) == 0) ? NULL : WIFIMANAGER_AP_PASSWORD;
+    
+    if (wifiManager.autoConnect(WIFIMANAGER_AP_SSID, apPassword)) {
         // Connected to WiFi successfully
         wifiConnected = true;
         Serial.println("\n=== Connected to WiFi! ===");
@@ -557,7 +563,7 @@ void initializeWebServer() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚂 RailHub32 ESP32 - )rawliteral" + String(customDeviceName) + R"rawliteral(</title>
+    <title>RailHub32 ESP32 - )rawliteral" + String(customDeviceName) + R"rawliteral(</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>">
     <style>
         :root {

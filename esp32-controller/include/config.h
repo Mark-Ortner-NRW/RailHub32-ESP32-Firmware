@@ -19,7 +19,7 @@
 
 // WiFiManager Configuration
 #define WIFIMANAGER_AP_SSID "RailHub32-Setup"  // Configuration portal AP name
-#define WIFIMANAGER_AP_PASSWORD ""             // Empty for open AP, or set password
+#define WIFIMANAGER_AP_PASSWORD "12345678"     // AP password (min 8 characters)
 #define WIFIMANAGER_TIMEOUT 180                 // Configuration portal timeout in seconds (3 min)
 #define PORTAL_TRIGGER_PIN 0                    // GPIO pin to trigger config portal (boot button)
 #define PORTAL_TRIGGER_DURATION 3000            // Hold duration in ms to trigger portal
