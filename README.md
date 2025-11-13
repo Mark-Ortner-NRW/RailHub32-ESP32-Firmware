@@ -11,6 +11,7 @@ Advanced firmware for ESP32-based model railway control system with WiFi configu
 
 - [Features](#-features)
 - [System Architecture](#-system-architecture)
+- [Architecture Documentation](#-architecture-documentation)
 - [Hardware Requirements](#-hardware-requirements)
 - [Pin Configuration](#-pin-configuration)
 - [Quick Start](#-quick-start)
@@ -98,6 +99,93 @@ graph TB
     style D fill:#5a2d82,stroke:#b794f4,stroke-width:2px
     style E fill:#7c2d12,stroke:#fc8181,stroke-width:2px
 ```
+
+## 📚 Architecture Documentation
+
+Comprehensive architecture documentation is available in the **arc42** subdirectory, following the arc42 architecture documentation template with extensive Mermaid diagrams.
+
+### 📂 Documentation Structure
+
+The arc42 documentation provides detailed insights into the system architecture:
+
+| Section | Description | Key Content |
+|---------|-------------|-------------|
+| **[01 - Introduction and Goals](arc42/01_introduction_and_goals.md)** | Requirements, quality goals, stakeholders | Business context, target audience, quality objectives |
+| **[02 - Constraints](arc42/02_constraints.md)** | Technical, organizational, legal constraints | Hardware limitations, compliance requirements |
+| **[03 - Context and Scope](arc42/03_context_and_scope.md)** | System boundaries and interfaces | External dependencies, communication channels |
+| **[04 - Solution Strategy](arc42/04_solution_strategy.md)** | Technology decisions and patterns | Architecture approach, key trade-offs |
+| **[05 - Building Block View](arc42/05_building_block_view.md)** | Component structure | Module hierarchy, code organization |
+| **[06 - Runtime View](arc42/06_runtime_view.md)** | Runtime behavior and scenarios | Boot sequence, WiFi setup, control flows |
+| **[07 - Deployment View](arc42/07_deployment_view.md)** | Infrastructure and deployment | Network topology, hardware requirements |
+| **[08 - Crosscutting Concepts](arc42/08_crosscutting_concepts.md)** | Security, error handling, configuration | Domain model, security architecture |
+| **[09 - Architecture Decisions](arc42/09_architecture_decisions.md)** | Architecture Decision Records (ADRs) | Technology choices, rationale, alternatives |
+| **[10 - Quality Requirements](arc42/10_quality_requirements.md)** | Quality scenarios and metrics | Reliability, performance, maintainability |
+| **[11 - Risks and Technical Debt](arc42/11_risks_and_technical_debt.md)** | Risk assessment | Technical risks, mitigation strategies |
+| **[12 - Glossary](arc42/12_glossary.md)** | Terminology and acronyms | Definitions, abbreviations, references |
+
+### 🎯 Quick Navigation
+
+**For Developers:**
+- Start with [Building Block View](arc42/05_building_block_view.md) for code structure
+- Review [Runtime View](arc42/06_runtime_view.md) for behavior understanding
+- Check [Architecture Decisions](arc42/09_architecture_decisions.md) for technology rationale
+
+**For Architects:**
+- Begin with [Solution Strategy](arc42/04_solution_strategy.md) for overview
+- Examine [Context and Scope](arc42/03_context_and_scope.md) for system boundaries
+- Study [Quality Requirements](arc42/10_quality_requirements.md) for quality goals
+
+**For Project Managers:**
+- Read [Introduction and Goals](arc42/01_introduction_and_goals.md) for business context
+- Review [Constraints](arc42/02_constraints.md) for limitations
+- Check [Risks and Technical Debt](arc42/11_risks_and_technical_debt.md) for project risks
+
+**For Operations:**
+- Focus on [Deployment View](arc42/07_deployment_view.md) for infrastructure
+- Review [Crosscutting Concepts](arc42/08_crosscutting_concepts.md) for operational concerns
+- Check [Troubleshooting](#-troubleshooting) section in this README
+
+### 📊 Visualization
+
+The arc42 documentation includes **50+ Mermaid diagrams** covering:
+
+- **Architecture Diagrams**: Component structure, layering, dependencies
+- **Sequence Diagrams**: Boot sequence, WiFi setup, API flows
+- **State Machines**: WiFi states, output control, error handling
+- **Deployment Diagrams**: Network topology, hardware connections
+- **Flowcharts**: Decision trees, error handling, configuration flows
+- **Timeline/Gantt**: Development roadmap, performance metrics
+- **Class Diagrams**: Domain model, data structures
+
+### 🔍 Key Architectural Highlights
+
+```mermaid
+mindmap
+  root((RailHub32<br/>Architecture))
+    Hardware Layer
+      ESP32 WROOM 32
+      16 GPIO Outputs
+      WiFi Radio
+    Software Stack
+      Arduino Framework
+      ESPAsyncWebServer
+      WiFiManager
+      mDNS Service
+    Design Patterns
+      Layered Architecture
+      Event Driven
+      RESTful API
+      Async Processing
+    Quality Goals
+      Reliability 99%
+      Performance <100ms
+      Usability 5min setup
+      Maintainability
+```
+
+### 📖 Access the Full Documentation
+
+Navigate to the [arc42 README](arc42/README.md) for the complete table of contents and detailed navigation guide.
 
 ### Boot Sequence Flow
 
