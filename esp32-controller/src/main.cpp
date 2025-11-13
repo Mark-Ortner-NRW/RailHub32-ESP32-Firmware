@@ -25,7 +25,6 @@ DNSServer dns;
 Preferences preferences;
 
 String macAddress;
-String deviceId;
 char customDeviceName[40] = DEVICE_NAME; // Custom device name from WiFiManager
 bool portalRunning = false;
 unsigned long portalButtonPressTime = 0;
@@ -44,10 +43,7 @@ void setup() {
     
     // Get MAC address for unique identification
     macAddress = WiFi.macAddress();
-    deviceId = MQTT_CLIENT_ID_PREFIX + macAddress;
-    deviceId.replace(":", "");
     
-    Serial.println("Device ID: " + deviceId);
     Serial.println("MAC Address: " + macAddress);
     
     // Initialize portal trigger pin
@@ -456,7 +452,7 @@ void loadCustomParameters() {
     Serial.println("Loaded device name: " + String(customDeviceName));
 }
 
-void reconnectMQTT() {r* topic, byte* payload, unsigned int length) {) {
+void executeOutputCommand(int pin, bool active, int brightnessPercent) {
     // Find the output index for the given pin
     int outputIndex = -1;
     for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -489,7 +485,7 @@ void reconnectMQTT() {r* topic, byte* payload, unsigned int length) {) {
                   " with brightness " + String(brightnessPercent) + "% [SAVED]");
 }
 
-void sendDiscoveryMessage() {x) {
+void saveOutputState(int index) {
     if (index < 0 || index >= MAX_OUTPUTS) {
         return;
     }
@@ -1369,7 +1365,6 @@ void initializeWebServer() {
     // API endpoint for status
     server->on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(2048);
-        doc["deviceId"] = deviceId;
         doc["macAddress"] = macAddress;
         doc["name"] = customDeviceName;
         doc["wifiMode"] = WiFi.getMode() == WIFI_AP ? "AP" : "STA";
