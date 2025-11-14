@@ -4,6 +4,7 @@
 #include <ESPAsyncWiFiManager.h>
 #include <Preferences.h>
 #include <ESPmDNS.h>
+#include <WebSocketsServer.h>
 #include "config.h"
 
 // Forward declarations
@@ -18,6 +19,10 @@ void loadOutputStates();
 void saveAllOutputStates();
 void saveCustomParameters();
 void loadCustomParameters();
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
+void broadcastStatus();
+void updateBlinkingOutputs();
+void setOutputInterval(int index, unsigned int intervalMs);
 
 // Global variables
 // Web Server
@@ -26,6 +31,13 @@ AsyncWebServer portalServer(80);
 DNSServer dns;
 AsyncWiFiManager wifiManager(&portalServer, &dns);
 Preferences preferences;
+
+// WebSocket server
+WebSocketsServer* ws = nullptr;
+
+// WebSocket broadcast timer
+unsigned long lastBroadcast = 0;
+const unsigned long BROADCAST_INTERVAL = 2000; // 2 seconds
 
 String macAddress;
 char customDeviceName[40] = DEVICE_NAME; // Custom device name from WiFiManager
@@ -88,6 +100,12 @@ void setup() {
         server = new AsyncWebServer(80);
         initializeWebServer();
         Serial.println("[WEB] Web server initialized successfully");
+        
+        Serial.println("[INIT] Starting WebSocket server on port 81...");
+        ws = new WebSocketsServer(81);
+        ws->onEvent(webSocketEvent);
+        ws->begin();
+        Serial.println("[WS] WebSocket server started on port 81");
     } else {
         Serial.println("[WARN] WiFi not connected - web server not started");
     }
@@ -103,6 +121,18 @@ void setup() {
 void loop() {
     // Process WiFiManager tasks (required for async operation)
     wifiManager.loop();
+    
+    // Handle WebSocket events
+    if (ws) {
+        ws->loop();
+    }
+    
+    // Broadcast status updates via WebSocket
+    unsigned long currentMillis = millis();
+    if (ws && currentMillis - lastBroadcast >= BROADCAST_INTERVAL) {
+        lastBroadcast = currentMillis;
+        broadcastStatus();
+    }
     
     // Check for config portal trigger button
     checkConfigPortalTrigger();
@@ -814,20 +844,81 @@ void saveAllOutputStates() {
     Serial.println("ms)");
 }
 
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[WS] Client #%u disconnected\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = ws->remoteIP(num);
+                Serial.printf("[WS] Client #%u connected from %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+                // Send initial status to the new client
+                broadcastStatus();
+            }
+            break;
+        case WStype_TEXT:
+            Serial.printf("[WS] Received text from client #%u: %s\n", num, payload);
+            break;
+        default:
+            break;
+    }
+}
+
+void broadcastStatus() {
+    if (!ws) return;
+    
+    DynamicJsonDocument doc(2048);
+    
+    doc["ip"] = WiFi.localIP().toString();
+    doc["macAddress"] = macAddress;
+    doc["uptime"] = millis();
+    doc["freeHeap"] = ESP.getFreeHeap();
+    doc["apClients"] = WiFi.softAPgetStationNum();
+    doc["wsClients"] = ws ? ws->connectedClients() : 0;
+    doc["buildDate"] = String(__DATE__) + " " + String(__TIME__);
+    doc["flashUsed"] = ESP.getSketchSize();
+    doc["flashFree"] = ESP.getFreeSketchSpace();
+    doc["flashPartition"] = ESP.getSketchSize() + ESP.getFreeSketchSpace();
+    
+    JsonArray outputs = doc.createNestedArray("outputs");
+    for (int i = 0; i < MAX_OUTPUTS; i++) {
+        JsonObject output = outputs.createNestedObject();
+        output["pin"] = outputPins[i];
+        output["active"] = outputStates[i];
+        output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
+        output["name"] = outputNames[i].length() > 0 ? outputNames[i] : "";
+    }
+    
+    String jsonString;
+    serializeJson(doc, jsonString);
+    ws->broadcastTXT(jsonString);
+}
+
 void initializeWebServer() {
     if (!server) return;
     
     // Serve main HTML page with RailHub32 styling
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        String html = R"rawliteral(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RailHub32 ESP32 - )rawliteral" + String(customDeviceName) + R"rawliteral(</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>">
-    <style>
+        Serial.print("[WEB] GET / from ");
+        Serial.println(request->client()->remoteIP());
+        
+        // Build HTML with template replacement to avoid memory issues
+        String html = F("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
+            "<meta charset=\"UTF-8\">\n"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+            "<title>RailHub32 ESP32 - ");
+        html += String(customDeviceName);
+        html += F("</title>\n"
+            "<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>\">\n"
+            "<style>\n");
+        
+        // Send first chunk
+        AsyncWebServerResponse *response = request->beginChunkedResponse("text/html", [html](uint8_t *buffer, size_t maxLen, size_t index) mutable -> size_t {
+            static String fullHtml;
+            if (index == 0) {
+                // Build complete HTML on first call
+                fullHtml = html + String(F(R"rawliteral(
         :root {
             --color-bg-primary: #0a0a0a;
             --color-bg-secondary: #141414;
@@ -1206,7 +1297,9 @@ void initializeWebServer() {
         <header>
             <div class="header-content">
                 <h1>🚂 RailHub32 ESP32</h1>
-                <p id="deviceName">)rawliteral" + String(customDeviceName) + R"rawliteral(</p>
+                <p id="deviceName">)rawliteral"));
+                fullHtml += String(customDeviceName);
+                fullHtml += String(F(R"rawliteral(</p>
                 <div class="language-selector">
                     <button class="lang-btn active" data-lang="en">EN</button>
                     <button class="lang-btn" data-lang="de">DE</button>
@@ -1244,15 +1337,41 @@ void initializeWebServer() {
                         <div class="status-label" data-i18n="status.uptime">Uptime</div>
                     </div>
                     <div class="status-card">
-                        <div class="status-value" id="freeHeap">0 KB</div>
-                        <div class="status-label" data-i18n="status.freeHeap">Free Heap</div>
+                        <div class="status-value" id="buildDate">-</div>
+                        <div class="status-label" data-i18n="status.buildDate">Build Date</div>
                     </div>
+                </div>
+                
+                <h3 class="section-title" style="margin-top:40px">Memory & Storage</h3>
+                <div style="max-width:800px">
+                    <div style="margin-bottom:25px">
+                        <div class="status-label" style="margin-bottom:8px">RAM (320 KB)</div>
+                        <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                            <div id="ramFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
+                            <div id="ramText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:25px">
+                        <div class="status-label" style="margin-bottom:8px">Program Flash (1.25 MB)</div>
+                        <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                            <div id="storageFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
+                            <div id="storageText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h3 class="section-title" style="margin-top:40px">Device Identifiers</h3>
+                <div class="status-grid">
                     <div class="status-card">
-                        <div class="status-value" id="macAddress">)rawliteral" + macAddress + R"rawliteral(</div>
+                        <div class="status-value" style="font-size:1.1rem;word-break:break-all">)rawliteral"));
+                fullHtml += macAddress;
+                fullHtml += String(F(R"rawliteral(</div>
                         <div class="status-label" data-i18n="status.macAddr">MAC Address</div>
                     </div>
                     <div class="status-card">
-                        <div class="status-value">)rawliteral" + String(AP_SSID) + R"rawliteral(</div>
+                        <div class="status-value" style="font-size:1.3rem">)rawliteral"));
+                fullHtml += String(AP_SSID);
+                fullHtml += String(F(R"rawliteral(</div>
                         <div class="status-label" data-i18n="status.apSsid">AP SSID</div>
                     </div>
                 </div>
@@ -1411,8 +1530,7 @@ void initializeWebServer() {
                 const data = await response.json();
                 
                 document.getElementById('deviceIp').textContent = data.ip;
-                document.getElementById('macAddress').textContent = data.macAddress;
-                document.getElementById('apClients').textContent = data.apClients || 0;
+                document.getElementById('apClients').textContent = data.wsClients || 0;
                 
                 const uptimeSeconds = Math.floor(data.uptime / 1000);
                 const hours = Math.floor(uptimeSeconds / 3600);
@@ -1421,8 +1539,26 @@ void initializeWebServer() {
                 document.getElementById('uptime').textContent = 
                     hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
                 
-                const heapKB = Math.floor(data.freeHeap / 1024);
-                document.getElementById('freeHeap').textContent = heapKB + ' KB';
+                if (data.buildDate) {
+                    document.getElementById('buildDate').textContent = data.buildDate;
+                }
+                
+                // Update RAM bar
+                const totalRam = 320 * 1024; // ESP32 has 320KB RAM
+                const usedRam = totalRam - data.freeHeap;
+                const ramPct = Math.round((usedRam / totalRam) * 100);
+                document.getElementById('ramFill').style.width = ramPct + '%';
+                document.getElementById('ramText').textContent = 
+                    Math.round(usedRam / 1024) + 'KB / 320KB (' + ramPct + '%)';
+                
+                // Update Flash bar
+                if (data.flashUsed && data.flashPartition) {
+                    const flashPct = Math.round((data.flashUsed / data.flashPartition) * 100);
+                    document.getElementById('storageFill').style.width = flashPct + '%';
+                    document.getElementById('storageText').textContent = 
+                        Math.round(data.flashUsed / 1024) + 'KB / ' + 
+                        Math.round(data.flashPartition / 1024) + 'KB (' + flashPct + '%)';
+                }
                 
                 return data;
             } catch (error) {
@@ -1438,10 +1574,23 @@ void initializeWebServer() {
                 return;
             }
             
+            let data;
+            if (wsData) {
+                data = wsData;
+                wsData = null;
+            } else {
+                try {
+                    const response = await fetch('/api/status');
+                    data = await response.json();
+                } catch (err) {
+                    console.error('[LOAD] Error:', err);
+                    return;
+                }
+            }
+            
+            if (!data) return;
+            
             try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                
                 // Update master brightness to match first active output (if any)
                 const activeOutputs = data.outputs.filter(o => o.active);
                 if (activeOutputs.length > 0) {
@@ -1674,25 +1823,122 @@ void initializeWebServer() {
         document.getElementById('refreshStatus').addEventListener('click', loadStatus);
         document.getElementById('refreshOutputs').addEventListener('click', loadOutputs);
 
+        // WebSocket connection
+        let ws;
+        let wsData = null;
+        const wsUrl = `ws://${window.location.hostname}:81`;
+        
+        function connectWebSocket() {
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('[WS] Connected');
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    wsData = JSON.parse(e.data);
+                    loadStatus();
+                    if (document.getElementById('outputsContent').classList.contains('active')) {
+                        loadOutputs();
+                    }
+                } catch (err) {
+                    console.error('[WS] Parse error:', err);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('[WS] Error:', error);
+            };
+            
+            ws.onclose = () => {
+                console.log('[WS] Disconnected. Reconnecting in 3s...');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+        
+        // Modify loadStatus to use WebSocket data if available
+        const originalLoadStatus = loadStatus;
+        loadStatus = async function() {
+            let data;
+            if (wsData) {
+                data = wsData;
+                wsData = null; // Clear after use
+            } else {
+                try {
+                    const response = await fetch('/api/status');
+                    data = await response.json();
+                } catch (err) {
+                    console.error('[LOAD] Error:', err);
+                    return;
+                }
+            }
+            
+            if (!data) return;
+            
+            try {
+                document.getElementById('deviceIp').textContent = data.ip;
+                document.getElementById('apClients').textContent = data.apClients || 0;
+                
+                const uptimeSeconds = Math.floor(data.uptime / 1000);
+                const hours = Math.floor(uptimeSeconds / 3600);
+                const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+                const seconds = uptimeSeconds % 60;
+                document.getElementById('uptime').textContent = 
+                    hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                
+                if (data.buildDate) {
+                    document.getElementById('buildDate').textContent = data.buildDate;
+                }
+                
+                // Update RAM bar
+                const totalRam = 320 * 1024;
+                const usedRam = totalRam - data.freeHeap;
+                const ramPct = Math.round((usedRam / totalRam) * 100);
+                document.getElementById('ramFill').style.width = ramPct + '%';
+                document.getElementById('ramText').textContent = 
+                    Math.round(usedRam / 1024) + 'KB / 320KB (' + ramPct + '%)';
+                
+                // Update Flash bar
+                if (data.flashUsed && data.flashPartition) {
+                    const flashPct = Math.round((data.flashUsed / data.flashPartition) * 100);
+                    document.getElementById('storageFill').style.width = flashPct + '%';
+                    document.getElementById('storageText').textContent = 
+                        Math.round(data.flashUsed / 1024) + 'KB / ' + 
+                        Math.round(data.flashPartition / 1024) + 'KB (' + flashPct + '%)';
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        };
+
         // Initial load
         loadStatus();
         if (savedTab === 'outputs') {
             loadOutputs();
         }
-
-        // Auto-refresh every 0.5 seconds
-        setInterval(() => {
-            loadStatus();
-            if (document.getElementById('outputsContent').classList.contains('active')) {
-                loadOutputs();
-            }
-        }, 500);
+        
+        // Connect WebSocket
+        connectWebSocket();
     </script>
 </body>
 </html>
-)rawliteral";
+)rawliteral"));
+            }
+            
+            // Send chunk
+            if (index >= fullHtml.length()) return 0;
+            
+            size_t len = fullHtml.length() - index;
+            if (len > maxLen) len = maxLen;
+            memcpy(buffer, fullHtml.c_str() + index, len);
+            return len;
+        });
         
-        request->send(200, "text/html", html);
+        Serial.println("[WEB] Sending HTML page");
+        request->send(response);
     });
     
     // API endpoint for status
@@ -1709,8 +1955,13 @@ void initializeWebServer() {
         doc["ip"] = WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
         doc["ssid"] = WiFi.getMode() == WIFI_AP ? String(AP_SSID) : WiFi.SSID();
         doc["apClients"] = WiFi.softAPgetStationNum();
+        doc["wsClients"] = ws ? ws->connectedClients() : 0;
         doc["freeHeap"] = ESP.getFreeHeap();
         doc["uptime"] = millis();
+        doc["buildDate"] = String(__DATE__) + " " + String(__TIME__);
+        doc["flashUsed"] = ESP.getSketchSize();
+        doc["flashFree"] = ESP.getFreeSketchSpace();
+        doc["flashPartition"] = ESP.getSketchSize() + ESP.getFreeSketchSpace();
         
         JsonArray outputs = doc.createNestedArray("outputs");
         for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -1732,6 +1983,11 @@ void initializeWebServer() {
         Serial.println("ms");
         
         request->send(200, "application/json", response);
+    });
+    
+    // Favicon handler - return 204 No Content to prevent errors
+    server->on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(204); // No Content
     });
     
     // API endpoint for updating output name
@@ -1775,6 +2031,10 @@ void initializeWebServer() {
         
         if (outputIndex >= 0) {
             saveOutputName(outputIndex, name);
+            
+            // Broadcast update to all WebSocket clients
+            broadcastStatus();
+            
             unsigned long duration = millis() - startTime;
             Serial.print("[WEB] Name update complete (");
             Serial.print(duration);
@@ -1821,6 +2081,9 @@ void initializeWebServer() {
         Serial.println("%");
         
         executeOutputCommand(pin, active, brightness);
+        
+        // Broadcast update to all WebSocket clients
+        broadcastStatus();
         
         unsigned long duration = millis() - startTime;
         Serial.print("[WEB] Control complete (");
