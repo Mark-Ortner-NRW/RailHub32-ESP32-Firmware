@@ -1,10 +1,10 @@
-# RailHub32 ESP32 Firmware - Development Effort Estimation
+# RailHub32 Firmware - Development Effort Estimation
 
 ## Executive Summary
 
 **Total Estimated Development Effort: 16-22 Person-Days**
 
-This document provides a comprehensive analysis of the development effort invested in the RailHub32 ESP32 Firmware project, an advanced model railway control system with WiFi capabilities, web-based interface, persistent state management, and comprehensive unit testing.
+This document provides a comprehensive analysis of the development effort invested in the RailHub32 Firmware project, an advanced model railway control system with WiFi capabilities, web-based interface, persistent state management, and comprehensive unit testing.
 
 ---
 
@@ -459,7 +459,7 @@ QA & Testing (7%)       ██
 
 ### Final Estimate: **16-22 Person-Days**
 
-The RailHub32 ESP32 Firmware project represents a **highly professional, production-ready implementation** developed with:
+The RailHub32 Firmware project represents a **highly professional, production-ready implementation** developed with:
 
 1. **Strong technical foundation** - Clean architecture, efficient resource usage
 2. **Exceptional documentation** - arc42 standard with 50+ diagrams
@@ -770,6 +770,6 @@ The low hardware cost ($30-50) combined with professional software quality creat
 ---
 
 *Document Generated: November 13, 2025*  
-*Project: RailHub32 ESP32 Firmware*  
+*Project: RailHub32 Firmware*  
 *Repository: Mark-Ortner-NRW/RailHub32-ESP32-Firmware*  
 *Analysis Based on: Codebase review, documentation analysis, commit history*

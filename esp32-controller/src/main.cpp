@@ -65,7 +65,7 @@ void setup() {
     esp_log_level_set("*", ESP_LOG_INFO);
     
     Serial.println("\n\n========================================");
-    Serial.println("  RailHub32 ESP32 Controller v1.0");
+    Serial.println("  RailHub32 Controller v1.0");
     Serial.println("========================================");
     Serial.println("[BOOT] Chip Model: " + String(ESP.getChipModel()));
     Serial.println("[BOOT] Chip Revision: " + String(ESP.getChipRevision()));
@@ -970,7 +970,7 @@ void initializeWebServer() {
         String html = F("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
             "<meta charset=\"UTF-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-            "<title>RailHub32 ESP32 - ");
+            "<title>RailHub32 - ");
         html += String(customDeviceName);
         html += F("</title>\n"
             "<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>\">\n"
@@ -1221,6 +1221,9 @@ void initializeWebServer() {
             border-color: var(--color-border);
         }
         .output-info {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             font-size: 0.85rem;
             color: var(--color-text-secondary);
             margin-bottom: 20px;
@@ -1234,10 +1237,14 @@ void initializeWebServer() {
         }
         .output-controls {
             display: flex;
-            gap: 16px;
-            align-items: center;
-            justify-content: space-between;
+            flex-direction: column;
+            gap: 0;
             margin-top: 16px;
+        }
+        .control-inputs {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
         .toggle-switch {
             position: relative;
@@ -1269,14 +1276,13 @@ void initializeWebServer() {
             display: flex;
             align-items: center;
             gap: 12px;
-            flex: 1;
         }
         .brightness-label {
             font-size: 0.75rem;
             color: var(--color-text-muted);
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            min-width: 40px;
+            min-width: 80px;
         }
         .brightness-slider {
             flex: 1;
@@ -1306,6 +1312,42 @@ void initializeWebServer() {
             color: var(--color-text-secondary);
             min-width: 35px;
             text-align: right;
+        }
+        .interval-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .interval-label {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            min-width: 80px;
+        }
+        .interval-input {
+            width: 100px;
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            border-radius: 4px;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        .interval-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .interval-input::-webkit-inner-spin-button,
+        .interval-input::-webkit-outer-spin-button {
+            opacity: 0.5;
+        }
+        .interval-unit {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
         }
         .section-title {
             font-size: 0.75rem;
@@ -1359,7 +1401,7 @@ void initializeWebServer() {
     <div class="container">
         <header>
             <div class="header-content">
-                <h1>🚂 RailHub32 ESP32</h1>
+                <h1>🚂 RailHub32</h1>
                 <p id="deviceName">)rawliteral"));
                 fullHtml += String(customDeviceName);
                 fullHtml += String(F(R"rawliteral(</p>
@@ -1382,9 +1424,6 @@ void initializeWebServer() {
         <main>
             <!-- Status Tab -->
             <div id="statusContent" class="tab-content active">
-                <div class="toolbar">
-                    <button id="refreshStatus" class="btn btn-primary" data-i18n="buttons.refresh">🔄 Refresh</button>
-                </div>
                 <h3 class="section-title" data-i18n="status.deviceInfo">Device Information</h3>
                 <div class="status-grid">
                     <div class="status-card">
@@ -1405,17 +1444,17 @@ void initializeWebServer() {
                     </div>
                 </div>
                 
-                <h3 class="section-title" style="margin-top:40px">Memory & Storage</h3>
+                <h3 class="section-title" style="margin-top:40px" data-i18n="status.memoryStorage">Memory & Storage</h3>
                 <div style="max-width:800px">
                     <div style="margin-bottom:25px">
-                        <div class="status-label" style="margin-bottom:8px">RAM (320 KB)</div>
+                        <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.ram">RAM</span> (320 KB)</div>
                         <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
                             <div id="ramFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
                             <div id="ramText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
                         </div>
                     </div>
                     <div style="margin-bottom:25px">
-                        <div class="status-label" style="margin-bottom:8px">Program Flash (1.25 MB)</div>
+                        <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.programFlash">Program Flash</span> (1.25 MB)</div>
                         <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
                             <div id="storageFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
                             <div id="storageText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
@@ -1443,7 +1482,6 @@ void initializeWebServer() {
             <!-- Outputs Tab -->
             <div id="outputsContent" class="tab-content">
                 <div class="toolbar">
-                    <button id="refreshOutputs" class="btn btn-primary" data-i18n="buttons.refresh">🔄 Refresh</button>
                     <button id="allOn" class="btn" data-i18n="buttons.allOn">💡 All On</button>
                     <button id="allOff" class="btn" data-i18n="buttons.allOff">⚫ All Off</button>
                 </div>
@@ -1487,38 +1525,38 @@ void initializeWebServer() {
             en: {
                 nav: { status: 'Status', outputs: 'Outputs' },
                 buttons: { refresh: '🔄 Refresh', allOn: '💡 All On', allOff: '⚫ All Off' },
-                status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID' },
-                outputs: { master: 'Master Brightness Control', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel' }
+                status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID', buildDate: 'Build Date', memoryStorage: 'Memory & Storage', ram: 'RAM', programFlash: 'Program Flash' },
+                outputs: { master: 'Master Brightness Control', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', interval: 'Interval', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel' }
             },
             de: {
                 nav: { status: 'Status', outputs: 'Ausgänge' },
                 buttons: { refresh: '🔄 Aktualisieren', allOn: '💡 Alle Ein', allOff: '⚫ Alle Aus' },
-                status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID' },
-                outputs: { master: 'Master-Helligkeitssteuerung', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen' }
+                status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID', buildDate: 'Build-Datum', memoryStorage: 'Speicher & Storage', ram: 'RAM', programFlash: 'Programm-Flash' },
+                outputs: { master: 'Master-Helligkeitssteuerung', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', interval: 'Intervall', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen' }
             },
             fr: {
                 nav: { status: 'Statut', outputs: 'Sorties' },
                 buttons: { refresh: '🔄 Actualiser', allOn: '💡 Tous Allumés', allOff: '⚫ Tous Éteints' },
-                status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID' },
-                outputs: { master: 'Contrôle principal de la luminosité', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler' }
+                status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID', buildDate: 'Date de compilation', memoryStorage: 'Mémoire & Stockage', ram: 'RAM', programFlash: 'Flash programme' },
+                outputs: { master: 'Contrôle principal de la luminosité', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', interval: 'Intervalle', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler' }
             },
             it: {
                 nav: { status: 'Stato', outputs: 'Uscite' },
                 buttons: { refresh: '🔄 Aggiorna', allOn: '💡 Tutti Accesi', allOff: '⚫ Tutti Spenti' },
-                status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID' },
-                outputs: { master: 'Controllo luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla' }
+                status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID', buildDate: 'Data compilazione', memoryStorage: 'Memoria & Archiviazione', ram: 'RAM', programFlash: 'Flash programma' },
+                outputs: { master: 'Controllo luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', interval: 'Intervallo', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla' }
             },
             zh: {
                 nav: { status: '状态', outputs: '输出' },
                 buttons: { refresh: '🔄 刷新', allOn: '💡 全部开启', allOff: '⚫ 全部关闭' },
-                status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID' },
-                outputs: { master: '主亮度控制', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消' }
+                status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID', buildDate: '构建日期', memoryStorage: '内存与存储', ram: '内存', programFlash: '程序闪存' },
+                outputs: { master: '主亮度控制', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', interval: '间隔', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消' }
             },
             hi: {
                 nav: { status: 'स्थिति', outputs: 'आउटपुट' },
                 buttons: { refresh: '🔄 रिफ्रेश', allOn: '💡 सभी चालू', allOff: '⚫ सभी बंद' },
-                status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID' },
-                outputs: { master: 'मास्टर चमक नियंत्रण', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें' }
+                status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID', buildDate: 'बिल्ड तिथि', memoryStorage: 'मेमोरी और स्टोरेज', ram: 'रैम', programFlash: 'प्रोग्राम फ्लैश' },
+                outputs: { master: 'मास्टर चमक नियंत्रण', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', interval: 'अंतराल', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें' }
             }
         };
 
@@ -1631,9 +1669,12 @@ void initializeWebServer() {
 
         // Load outputs
         async function loadOutputs() {
-            // Don't update if user is editing a name
+            // Don't update if user is editing a name or interval
             const activeElement = document.activeElement;
             if (activeElement && activeElement.id && activeElement.id.startsWith('name-input-')) {
+                return;
+            }
+            if (activeElement && activeElement.className && activeElement.className.includes('interval-input')) {
                 return;
             }
             
@@ -1688,22 +1729,36 @@ void initializeWebServer() {
                             </div>
                         </div>
                         <div class="output-info">
-                            <strong>${t.pin}:</strong> GPIO ${output.pin}
-                        </div>
-                        <div class="output-controls">
+                            <div><strong>${t.pin}:</strong> GPIO ${output.pin}</div>
                             <div class="toggle-switch ${output.active ? 'active' : ''}" 
                                  data-pin="${output.pin}" 
                                  onclick="toggleOutput(${output.pin})">
                             </div>
-                            <div class="brightness-control">
-                                <span class="brightness-label">${t.brightness}</span>
-                                <input type="range" 
-                                       class="brightness-slider" 
-                                       min="0" max="100" 
-                                       value="${output.brightness}" 
-                                       data-pin="${output.pin}"
-                                       onchange="setBrightness(${output.pin}, this.value)">
-                                <span class="brightness-value">${output.brightness}%</span>
+                        </div>
+                        <div class="output-controls">
+                            <div class="control-inputs">
+                                <div class="brightness-control">
+                                    <span class="brightness-label">${t.brightness}</span>
+                                    <input type="range" 
+                                           class="brightness-slider" 
+                                           min="0" max="100" 
+                                           value="${output.brightness}" 
+                                           data-pin="${output.pin}"
+                                           onchange="setBrightness(${output.pin}, this.value)">
+                                    <span class="brightness-value">${output.brightness}%</span>
+                                </div>
+                                <div class="interval-control">
+                                    <span class="interval-label">${t.interval}:</span>
+                                    <input type="number" 
+                                           class="interval-input" 
+                                           min="0"
+                                           step="100"
+                                           placeholder="0" 
+                                           value="${output.interval || 0}" 
+                                           data-pin="${output.pin}"
+                                           onchange="setInterval(${output.pin}, this.value)">
+                                    <span class="interval-unit">ms</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -1760,6 +1815,26 @@ void initializeWebServer() {
                 }
             } catch (error) {
                 console.error('Error setting brightness:', error);
+            }
+        }
+
+        // Set interval
+        async function setInterval(pin, interval) {
+            try {
+                const response = await fetch('/api/interval', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pin: pin,
+                        interval: parseInt(interval) || 0
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log(`Interval set for pin ${pin}: ${interval}ms`);
+                }
+            } catch (error) {
+                console.error('Error setting interval:', error);
             }
         }
 
@@ -1881,10 +1956,6 @@ void initializeWebServer() {
                 cancelEditName(pin);
             }
         }
-
-        // Refresh buttons
-        document.getElementById('refreshStatus').addEventListener('click', loadStatus);
-        document.getElementById('refreshOutputs').addEventListener('click', loadOutputs);
 
         // WebSocket connection
         let ws;

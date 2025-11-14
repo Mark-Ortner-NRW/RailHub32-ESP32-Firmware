@@ -6,7 +6,7 @@
 
 ```mermaid
 graph TB
-    subgraph "RailHub32 ESP32 Controller"
+    subgraph "RailHub32 Controller"
         direction TB
         
         subgraph "Presentation Layer"

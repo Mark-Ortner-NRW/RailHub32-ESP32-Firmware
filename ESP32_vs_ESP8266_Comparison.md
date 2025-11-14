@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document compares the **RailHub32 ESP32** and **RailHub8266 ESP8266** railway controller implementations.
+This document compares the **RailHub32** and **RailHub8266 ESP8266** railway controller implementations.
 
 ## Hardware Comparison
 

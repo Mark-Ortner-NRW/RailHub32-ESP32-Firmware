@@ -1,6 +1,6 @@
 # RailHub8266 ESP8266 WiFi-Controlled Railway Controller
 
-ESP8266-based WiFi-controlled PWM output controller for model railways and lighting control. This is a port of the RailHub32 ESP32 controller, adapted for the ESP8266 platform with 8 outputs instead of 16.
+ESP8266-based WiFi-controlled PWM output controller for model railways and lighting control. This is a port of the RailHub32 controller, adapted for the ESP8266 platform with 8 outputs instead of 16.
 
 ## Features
 
@@ -223,7 +223,7 @@ esp8266-controller/
 
 ## Version History
 
-- **1.0.0** - Initial ESP8266 port from RailHub32 ESP32 controller
+- **1.0.0** - Initial ESP8266 port from RailHub32 controller
   - 8 PWM outputs adapted for ESP8266 GPIO constraints
   - EEPROM storage replacing ESP32 Preferences
   - Optimized for ESP8266 memory limitations

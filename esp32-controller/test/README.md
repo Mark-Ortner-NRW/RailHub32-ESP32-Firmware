@@ -1,8 +1,8 @@
-# RailHub32 ESP32 Controller - Unit Tests
+# RailHub32 Controller - Unit Tests
 
 ## Overview
 
-This directory contains comprehensive unit tests for the RailHub32 ESP32 Controller firmware. The tests are organized by functional area and use the Unity testing framework integrated with PlatformIO.
+This directory contains comprehensive unit tests for the RailHub32 Controller firmware. The tests are organized by functional area and use the Unity testing framework integrated with PlatformIO.
 
 ## Test Structure
 

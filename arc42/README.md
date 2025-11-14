@@ -1,6 +1,6 @@
-# RailHub32 ESP32 Architecture Documentation (arc42)
+# RailHub32 Architecture Documentation (arc42)
 
-This directory contains the architecture documentation for the RailHub32 ESP32 Firmware project, structured according to the arc42 template.
+This directory contains the architecture documentation for the RailHub32 Firmware project, structured according to the arc42 template.
 
 ## Documentation Structure
 

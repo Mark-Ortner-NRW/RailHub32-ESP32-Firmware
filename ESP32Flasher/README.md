@@ -1,4 +1,4 @@
-# RailHub32 ESP32 Flasher
+# RailHub32 Flasher
 
 Minimalistic Windows Forms application for flashing RailHub32 firmware to ESP32 devices.
 

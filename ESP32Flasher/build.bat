@@ -1,6 +1,6 @@
 @echo off
 echo ============================================
-echo    RailHub32 ESP32 Flasher - Build Script
+echo    RailHub32 Flasher - Build Script
 echo ============================================
 echo.
 

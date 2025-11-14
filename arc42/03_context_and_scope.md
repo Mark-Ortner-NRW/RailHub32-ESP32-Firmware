@@ -49,7 +49,7 @@ C4Context
     Person(user, "Model Railway Operator", "Controls layout via web interface")
     Person(admin, "System Administrator", "Configures and maintains system")
     
-    System(railhub, "RailHub32 ESP32 Controller", "WiFi-based model railway control system")
+    System(railhub, "RailHub32 Controller", "WiFi-based model railway control system")
     
     System_Ext(router, "WiFi Router", "Network connectivity")
     System_Ext(railway, "Model Railway Layout", "Physical accessories and infrastructure")

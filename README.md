@@ -1,4 +1,4 @@
-# 🚂 RailHub32 ESP32 Firmware
+# 🚂 RailHub32 Firmware
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)
