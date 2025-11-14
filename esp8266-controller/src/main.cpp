@@ -13,6 +13,13 @@ void initializeWiFiManager();
 void checkConfigPortalTrigger();
 void initializeWebServer();
 void executeOutputCommand(int pin, bool active, int brightnessPercent);
+void updateBlinkingOutputs();
+void updateChasingLightGroups();
+void setOutputInterval(int index, unsigned int intervalMs);
+void createChasingGroup(uint8_t groupId, uint8_t* outputIndices, uint8_t count, unsigned int intervalMs);
+void deleteChasingGroup(uint8_t groupId);
+void saveChasingGroups();
+void loadChasingGroups();
 void saveOutputState(int index);
 void loadOutputStates();
 void saveAllOutputStates();
@@ -24,12 +31,37 @@ void loadCustomParameters();
 ESP8266WebServer* server = nullptr;
 WiFiManager wifiManager;
 
+#define MAX_CHASING_GROUPS 4
+
+// Chasing group structure
+struct ChasingGroup {
+    uint8_t groupId;
+    bool active;
+    char name[21]; // 20 chars + null terminator
+    uint8_t outputIndices[8]; // Max 8 outputs per group
+    uint8_t outputCount;
+    uint16_t interval; // Step interval in ms
+    uint8_t currentStep; // Current active output in sequence
+    unsigned long lastStepTime;
+};
+
 // EEPROM structure for ESP8266
 struct EEPROMData {
     char deviceName[40];
     bool outputStates[8];
     uint8_t outputBrightness[8];
     char outputNames[8][21]; // 20 chars + null terminator
+    uint16_t outputIntervals[8]; // Blink interval in milliseconds (0 = no blink)
+    // Chasing groups data
+    uint8_t chasingGroupCount;
+    struct {
+        uint8_t groupId;
+        bool active;
+        char name[21];
+        uint8_t outputIndices[8];
+        uint8_t outputCount;
+        uint16_t interval;
+    } chasingGroups[MAX_CHASING_GROUPS];
     uint8_t checksum;
 };
 EEPROMData eepromData;
@@ -45,6 +77,14 @@ int outputPins[MAX_OUTPUTS] = LED_PINS;
 bool outputStates[MAX_OUTPUTS] = {false};
 int outputBrightness[MAX_OUTPUTS] = {255}; // 0-255 for PWM
 String outputNames[MAX_OUTPUTS]; // Custom names for outputs
+unsigned int outputIntervals[MAX_OUTPUTS] = {0}; // Blink interval in ms (0 = no blink)
+unsigned long lastBlinkTime[MAX_OUTPUTS] = {0}; // Last blink toggle time
+bool blinkState[MAX_OUTPUTS] = {false}; // Current blink state (for internal tracking)
+int8_t outputChasingGroup[MAX_OUTPUTS] = {-1, -1, -1, -1, -1, -1, -1}; // Which chasing group owns this output (-1 = none)
+
+// Chasing light groups
+ChasingGroup chasingGroups[MAX_CHASING_GROUPS];
+uint8_t chasingGroupCount = 0;
 
 // Timing variables
 
@@ -83,6 +123,10 @@ void setup() {
     Serial.println("[INIT] Loading saved output states...");
     loadOutputStates();
     
+    // Load chasing groups
+    Serial.println("[INIT] Loading chasing groups...");
+    loadChasingGroups();
+    
     // Initialize WiFi with WiFiManager
     Serial.println("[INIT] Initializing WiFi Manager...");
     initializeWiFiManager();
@@ -116,6 +160,12 @@ void loop() {
     
     // Update mDNS responder
     MDNS.update();
+    
+    // Update chasing light groups (has priority)
+    updateChasingLightGroups();
+    
+    // Update blinking outputs (only for non-chasing outputs)
+    updateBlinkingOutputs();
     
     // Handle any other tasks
     yield();
@@ -423,6 +473,89 @@ void saveCustomParameters() {
     Serial.println("'");
 }
 
+void saveChasingGroups() {
+    Serial.println("[EEPROM] Saving chasing groups...");
+    
+    // Read current EEPROM data
+    EEPROM.get(0, eepromData);
+    
+    // Update chasing groups
+    eepromData.chasingGroupCount = 0;
+    for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+        if (chasingGroups[i].active) {
+            eepromData.chasingGroups[i].groupId = chasingGroups[i].groupId;
+            eepromData.chasingGroups[i].active = true;
+            strncpy(eepromData.chasingGroups[i].name, chasingGroups[i].name, 20);
+            eepromData.chasingGroups[i].name[20] = '\0';
+            eepromData.chasingGroups[i].outputCount = chasingGroups[i].outputCount;
+            eepromData.chasingGroups[i].interval = chasingGroups[i].interval;
+            for (int j = 0; j < chasingGroups[i].outputCount; j++) {
+                eepromData.chasingGroups[i].outputIndices[j] = chasingGroups[i].outputIndices[j];
+            }
+            eepromData.chasingGroupCount++;
+        } else {
+            eepromData.chasingGroups[i].active = false;
+        }
+    }
+    
+    // Write back to EEPROM
+    EEPROM.put(0, eepromData);
+    EEPROM.commit();
+    
+    Serial.print("[EEPROM] Saved ");
+    Serial.print(eepromData.chasingGroupCount);
+    Serial.println(" chasing groups");
+}
+
+void loadChasingGroups() {
+    Serial.println("[EEPROM] Loading chasing groups...");
+    
+    // Read EEPROM data
+    EEPROM.get(0, eepromData);
+    
+    int loadedGroups = 0;
+    
+    for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+        if (eepromData.chasingGroups[i].active && eepromData.chasingGroups[i].outputCount > 0) {
+            chasingGroups[i].groupId = eepromData.chasingGroups[i].groupId;
+            chasingGroups[i].active = true;
+            strncpy(chasingGroups[i].name, eepromData.chasingGroups[i].name, 20);
+            chasingGroups[i].name[20] = '\0';
+            chasingGroups[i].outputCount = eepromData.chasingGroups[i].outputCount;
+            chasingGroups[i].interval = eepromData.chasingGroups[i].interval;
+            chasingGroups[i].currentStep = 0;
+            chasingGroups[i].lastStepTime = millis();
+            
+            for (int j = 0; j < chasingGroups[i].outputCount; j++) {
+                uint8_t idx = eepromData.chasingGroups[i].outputIndices[j];
+                chasingGroups[i].outputIndices[j] = idx;
+                if (idx < MAX_OUTPUTS) {
+                    outputChasingGroup[idx] = chasingGroups[i].groupId;
+                }
+            }
+            
+            loadedGroups++;
+            
+            Serial.print("[CHASING] Loaded group ");
+            Serial.print(chasingGroups[i].groupId);
+            Serial.print(" '");
+            Serial.print(chasingGroups[i].name);
+            Serial.print("' with ");
+            Serial.print(chasingGroups[i].outputCount);
+            Serial.print(" outputs, interval: ");
+            Serial.print(chasingGroups[i].interval);
+            Serial.println("ms");
+        } else {
+            chasingGroups[i].active = false;
+            chasingGroups[i].outputCount = 0;
+        }
+    }
+    
+    Serial.print("[EEPROM] Loaded ");
+    Serial.print(loadedGroups);
+    Serial.println(" chasing groups");
+}
+
 void loadCustomParameters() {
     Serial.println("[EEPROM] Loading custom parameters...");
     
@@ -501,6 +634,7 @@ void saveOutputState(int index) {
     // Update specific output
     eepromData.outputStates[index] = outputStates[index];
     eepromData.outputBrightness[index] = outputBrightness[index];
+    eepromData.outputIntervals[index] = outputIntervals[index];
     
     // Write back to EEPROM
     EEPROM.put(0, eepromData);
@@ -514,7 +648,9 @@ void saveOutputState(int index) {
     Serial.print(outputStates[index] ? "ON" : "OFF");
     Serial.print(" @ ");
     Serial.print(outputBrightness[index]);
-    Serial.println(" PWM");
+    Serial.print(" PWM, Interval: ");
+    Serial.print(outputIntervals[index]);
+    Serial.println("ms");
 }
 
 void saveOutputName(int index, String name) {
@@ -583,7 +719,16 @@ void loadOutputStates() {
             eepromData.outputStates[i] = false;
             eepromData.outputBrightness[i] = 255;
             eepromData.outputNames[i][0] = '\0';
+            eepromData.outputIntervals[i] = 0;
         }
+        
+        // Initialize chasing groups
+        eepromData.chasingGroupCount = 0;
+        for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+            eepromData.chasingGroups[i].active = false;
+            eepromData.chasingGroups[i].outputCount = 0;
+        }
+        
         strncpy(eepromData.deviceName, DEVICE_NAME, 39);
         eepromData.deviceName[39] = '\0';
         
@@ -594,11 +739,13 @@ void loadOutputStates() {
     
     int loadedCount = 0;
     int namedCount = 0;
+    int blinkingCount = 0;
     
     for (int i = 0; i < MAX_OUTPUTS; i++) {
         // Load state and brightness from EEPROM
         outputStates[i] = eepromData.outputStates[i];
         outputBrightness[i] = eepromData.outputBrightness[i];
+        outputIntervals[i] = eepromData.outputIntervals[i];
         
         // Load custom name - validate it's printable ASCII
         if (eepromData.outputNames[i][0] != '\0' && 
@@ -615,9 +762,20 @@ void loadOutputStates() {
         
         // Apply the loaded state to the output
         if (outputStates[i]) {
-            analogWrite(outputPins[i], outputBrightness[i]);
+            // If blinking is enabled, start in ON state
+            if (outputIntervals[i] > 0) {
+                analogWrite(outputPins[i], outputBrightness[i]);
+                blinkState[i] = true;
+                lastBlinkTime[i] = millis();
+                blinkingCount++;
+            } else {
+                analogWrite(outputPins[i], outputBrightness[i]);
+            }
             int brightPercent = map(outputBrightness[i], 0, 255, 0, 100);
             Serial.print("[EEPROM] Output " + String(i) + " (GPIO " + String(outputPins[i]) + "): ON @ " + String(brightPercent) + "%");
+            if (outputIntervals[i] > 0) {
+                Serial.print(" [Blink: " + String(outputIntervals[i]) + "ms]");
+            }
             if (outputNames[i].length() > 0) {
                 Serial.println(" [Name: " + outputNames[i] + "]");
             } else {
@@ -626,10 +784,11 @@ void loadOutputStates() {
             loadedCount++;
         } else {
             analogWrite(outputPins[i], 0);
+            blinkState[i] = false;
         }
     }
     
-    Serial.println("[EEPROM] Loaded " + String(loadedCount) + " active outputs, " + String(namedCount) + " custom names");
+    Serial.println("[EEPROM] Loaded " + String(loadedCount) + " active outputs, " + String(namedCount) + " custom names, " + String(blinkingCount) + " blinking");
 }
 
 void saveAllOutputStates() {
@@ -643,6 +802,7 @@ void saveAllOutputStates() {
     for (int i = 0; i < MAX_OUTPUTS; i++) {
         eepromData.outputStates[i] = outputStates[i];
         eepromData.outputBrightness[i] = outputBrightness[i];
+        eepromData.outputIntervals[i] = outputIntervals[i];
     }
     
     // Write back to EEPROM
@@ -655,6 +815,221 @@ void saveAllOutputStates() {
     Serial.print(" outputs saved (");
     Serial.print(duration);
     Serial.println("ms)");
+}
+
+void updateChasingLightGroups() {
+    unsigned long currentMillis = millis();
+    
+    for (int g = 0; g < MAX_CHASING_GROUPS; g++) {
+        ChasingGroup* group = &chasingGroups[g];
+        
+        if (!group->active || group->outputCount == 0) continue;
+        
+        // Check if it's time to step to next output
+        if (currentMillis - group->lastStepTime >= group->interval) {
+            // Turn off current output
+            uint8_t currentIdx = group->outputIndices[group->currentStep];
+            if (currentIdx < MAX_OUTPUTS) {
+                analogWrite(outputPins[currentIdx], 0);
+                Serial.print("[CHASING] Group ");
+                Serial.print(group->groupId);
+                Serial.print(" OFF: idx=");
+                Serial.print(currentIdx);
+                Serial.print(" GPIO=");
+                Serial.println(outputPins[currentIdx]);
+            }
+            
+            // Move to next step
+            group->currentStep = (group->currentStep + 1) % group->outputCount;
+            group->lastStepTime = currentMillis;
+            
+            // Turn on next output (always, regardless of state)
+            uint8_t nextIdx = group->outputIndices[group->currentStep];
+            if (nextIdx < MAX_OUTPUTS) {
+                analogWrite(outputPins[nextIdx], outputBrightness[nextIdx]);
+                Serial.print("[CHASING] Group ");
+                Serial.print(group->groupId);
+                Serial.print(" ON: idx=");
+                Serial.print(nextIdx);
+                Serial.print(" GPIO=");
+                Serial.println(outputPins[nextIdx]);
+            }
+        }
+    }
+}
+
+void updateBlinkingOutputs() {
+    unsigned long currentMillis = millis();
+    
+    for (int i = 0; i < MAX_OUTPUTS; i++) {
+        // Skip if output is part of a chasing group
+        if (outputChasingGroup[i] >= 0) continue;
+        
+        // Only process if output is active and has a blink interval set
+        if (outputStates[i] && outputIntervals[i] > 0) {
+            // Check if it's time to toggle
+            if (currentMillis - lastBlinkTime[i] >= outputIntervals[i]) {
+                lastBlinkTime[i] = currentMillis;
+                blinkState[i] = !blinkState[i];
+                
+                // Toggle the output
+                if (blinkState[i]) {
+                    analogWrite(outputPins[i], outputBrightness[i]);
+                } else {
+                    analogWrite(outputPins[i], 0);
+                }
+            }
+        } else if (outputStates[i] && outputIntervals[i] == 0) {
+            // No blinking - ensure output is solid on
+            if (!blinkState[i]) {
+                analogWrite(outputPins[i], outputBrightness[i]);
+                blinkState[i] = true;
+            }
+        }
+    }
+}
+
+void createChasingGroup(uint8_t groupId, uint8_t* outputIndices, uint8_t count, unsigned int intervalMs, const char* groupName = nullptr) {
+    if (groupId >= MAX_CHASING_GROUPS || count == 0 || count > 8) {
+        Serial.println("[ERROR] Invalid chasing group parameters");
+        return;
+    }
+    
+    // Find or create group slot
+    int groupSlot = -1;
+    for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+        if (chasingGroups[i].groupId == groupId || !chasingGroups[i].active) {
+            groupSlot = i;
+            break;
+        }
+    }
+    
+    if (groupSlot == -1) {
+        Serial.println("[ERROR] No available chasing group slots");
+        return;
+    }
+    
+    // Clear old group memberships for these outputs
+    for (int i = 0; i < count; i++) {
+        uint8_t idx = outputIndices[i];
+        if (idx < MAX_OUTPUTS) {
+            outputChasingGroup[idx] = -1;
+        }
+    }
+    
+    // Setup new group
+    ChasingGroup* group = &chasingGroups[groupSlot];
+    group->groupId = groupId;
+    group->active = true;
+    
+    // Set group name (default: "Group X" if not provided)
+    if (groupName != nullptr && strlen(groupName) > 0) {
+        strncpy(group->name, groupName, 20);
+        group->name[20] = '\0';
+    } else {
+        snprintf(group->name, 21, "Group %d", groupId);
+    }
+    
+    group->outputCount = count;
+    group->interval = intervalMs;
+    group->currentStep = 0;
+    group->lastStepTime = millis();
+    
+    for (int i = 0; i < count; i++) {
+        group->outputIndices[i] = outputIndices[i];
+        if (outputIndices[i] < MAX_OUTPUTS) {
+            outputChasingGroup[outputIndices[i]] = groupId;
+        }
+    }
+    
+    // Turn on all outputs in group
+    for (int i = 0; i < count; i++) {
+        uint8_t idx = outputIndices[i];
+        if (idx < MAX_OUTPUTS) {
+            outputStates[idx] = true;
+        }
+    }
+    
+    // Initialize first output on, rest off
+    for (int i = 0; i < count; i++) {
+        uint8_t idx = outputIndices[i];
+        if (idx < MAX_OUTPUTS) {
+            if (i == 0) {
+                analogWrite(outputPins[idx], outputBrightness[idx]);
+            } else {
+                analogWrite(outputPins[idx], 0);
+            }
+        }
+    }
+    
+    saveChasingGroups();
+    
+    Serial.print("[CHASING] Group ");
+    Serial.print(groupId);
+    Serial.print(" created with ");
+    Serial.print(count);
+    Serial.print(" outputs, interval: ");
+    Serial.print(intervalMs);
+    Serial.println("ms");
+}
+
+void deleteChasingGroup(uint8_t groupId) {
+    for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+        if (chasingGroups[i].groupId == groupId && chasingGroups[i].active) {
+            // Free outputs from group
+            for (int j = 0; j < chasingGroups[i].outputCount; j++) {
+                uint8_t idx = chasingGroups[i].outputIndices[j];
+                if (idx < MAX_OUTPUTS) {
+                    outputChasingGroup[idx] = -1;
+                    // Turn off output
+                    analogWrite(outputPins[idx], 0);
+                    outputStates[idx] = false;
+                }
+            }
+            
+            // Clear group
+            chasingGroups[i].active = false;
+            chasingGroups[i].outputCount = 0;
+            
+            saveChasingGroups();
+            
+            Serial.print("[CHASING] Group ");
+            Serial.print(groupId);
+            Serial.println(" deleted");
+            return;
+        }
+    }
+    
+    Serial.print("[ERROR] Chasing group ");
+    Serial.print(groupId);
+    Serial.println(" not found");
+}
+
+void setOutputInterval(int index, unsigned int intervalMs) {
+    if (index < 0 || index >= MAX_OUTPUTS) {
+        Serial.println("[ERROR] Invalid output index for interval: " + String(index));
+        return;
+    }
+    
+    outputIntervals[index] = intervalMs;
+    
+    // Reset blink timing
+    lastBlinkTime[index] = millis();
+    blinkState[index] = true;
+    
+    // If output is active and interval is set, start with ON state
+    if (outputStates[index]) {
+        if (intervalMs > 0) {
+            analogWrite(outputPins[index], outputBrightness[index]);
+            Serial.println("[INTERVAL] Output " + String(index) + " (GPIO " + String(outputPins[index]) + ") set to blink every " + String(intervalMs) + "ms");
+        } else {
+            analogWrite(outputPins[index], outputBrightness[index]);
+            Serial.println("[INTERVAL] Output " + String(index) + " (GPIO " + String(outputPins[index]) + ") blinking disabled (solid)");
+        }
+    }
+    
+    // Save to EEPROM
+    saveOutputState(index);
 }
 
 void initializeWebServer() {
@@ -672,15 +1047,26 @@ void initializeWebServer() {
         ".status{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}.stat{background:#333;padding:10px;text-align:center}"
         ".value{font-size:1.5rem;color:#6c9bcf}.label{font-size:0.8rem;color:#999;margin-top:5px}"
         ".outputs{display:grid;gap:10px}.output{background:#333;padding:10px;display:flex;justify-content:space-between;align-items:center}"
-        ".output.on{border-left:3px solid #4a9b6f}.toggle{width:60px;height:30px;background:#555;cursor:pointer;position:relative}"
+        ".output.on{border-left:3px solid #4a9b6f}.output.blinking{border-left:3px solid #f39c12}.toggle{width:60px;height:30px;background:#555;cursor:pointer;position:relative}"
         ".toggle.on{background:#4a9b6f}.toggle::after{content:'';position:absolute;width:26px;height:26px;background:#fff;top:2px;left:2px;transition:0.2s}"
         ".toggle.on::after{left:32px}.brightness{display:flex;align-items:center;gap:10px;margin-top:8px}"
         ".brightness input{flex:1;height:6px;border-radius:3px;background:#555;outline:none;-webkit-appearance:none}"
         ".brightness input::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#6c9bcf;cursor:pointer}"
         ".brightness input::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#6c9bcf;cursor:pointer;border:none}"
         ".brightness span{min-width:40px;text-align:right;font-size:0.9rem;color:#999}"
+        ".interval{display:flex;align-items:center;gap:10px;margin-top:8px}"
+        ".interval input{width:80px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px}"
+        ".interval span{font-size:0.85rem;color:#999}"
+        ".output.chasing{border-left:3px solid #9b59b6}"
+        ".chasing-group{background:#3a2a4a;padding:10px;margin-bottom:10px;border-left:3px solid #9b59b6}"
+        ".chasing-group h3{font-size:1rem;margin-bottom:5px;color:#9b59b6;cursor:pointer}"
+        ".chasing-group h3:hover{color:#bb79d6}"
+        ".group-info{font-size:0.85rem;color:#999}"
+        ".output-name{cursor:pointer;font-weight:bold;color:#6c9bcf}"
+        ".output-name:hover{color:#8bb5e0;text-decoration:underline}"
         "button{background:#6c9bcf;color:#fff;border:none;padding:10px 20px;cursor:pointer;margin-right:10px}"
-        "button:hover{background:#5a8bc0}.info{font-size:0.9rem;color:#999}</style></head><body>"));
+        "button:hover{background:#5a8bc0}button.delete{background:#e74c3c}button.delete:hover{background:#c0392b}"
+        ".info{font-size:0.9rem;color:#999}</style></head><body>"));
         
         // Body start
         server->sendContent(F("<div class='card'><h1>🚂 RailHub8266</h1><p class='info'>"));
@@ -690,19 +1076,50 @@ void initializeWebServer() {
         "<div class='stat'><div class='value' id='uptime'>-</div><div class='label'>Uptime</div></div>"
         "</div></div><div class='card'><h2>Controls</h2>"
         "<button onclick='allOn()'>All ON</button><button onclick='allOff()'>All OFF</button><button onclick='refresh()'>Refresh</button>"
-        "</div><div class='card'><h2>Outputs</h2><div class='outputs' id='outputs'></div></div>"));
+        "</div><div class='card'><h2>Chasing Light Groups</h2>"
+        "<div style='margin-bottom:15px'>"
+        "<label style='display:block;margin-bottom:5px'>Group ID:</label>"
+        "<input type='number' id='newGroupId' min='1' max='255' value='1' style='width:100px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px'><br>"
+        "<label style='display:block;margin:10px 0 5px'>Interval (ms):</label>"
+        "<input type='number' id='newGroupInterval' min='50' max='10000' value='500' style='width:100px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px'><br>"
+        "<label style='display:block;margin:10px 0 5px'>Select Outputs:</label>"
+        "<div id='outputSelector'></div>"
+        "<button onclick='createGroup()' style='margin-top:10px'>Create Group</button>"
+        "</div><div id='chasingGroups'></div></div>"
+        "<div class='card'><h2>Outputs</h2><div class='outputs' id='outputs'></div></div>"));
         
         // JavaScript chunk
         server->sendContent(F("<script>async function load(){try{const r=await fetch('/api/status');const d=await r.json();"
         "document.getElementById('heap').textContent=(d.freeHeap/1024).toFixed(1)+'KB';"
         "const s=Math.floor(d.uptime/1000);document.getElementById('uptime').textContent=s+'s';"
+        "const sel=document.getElementById('outputSelector');"
+        "const checked=[];document.querySelectorAll('#outputSelector input:checked').forEach(cb=>checked.push(cb.value));"
+        "sel.innerHTML='';"
+        "d.outputs.forEach(out=>{"
+        "const lbl=document.createElement('label');lbl.style.display='block';lbl.style.marginBottom='5px';"
+        "const cb=document.createElement('input');cb.type='checkbox';cb.value=out.pin;cb.id='out_'+out.pin;"
+        "cb.disabled=out.chasingGroup>=0;if(checked.includes(out.pin.toString()))cb.checked=true;lbl.appendChild(cb);"
+        "lbl.appendChild(document.createTextNode(' GPIO '+out.pin+(out.chasingGroup>=0?' [In Group '+out.chasingGroup+']':'')));"
+        "sel.appendChild(lbl);});"
+        "const cg=document.getElementById('chasingGroups');cg.innerHTML='';"
+        "if(d.chasingGroups&&d.chasingGroups.length>0){"
+        "d.chasingGroups.forEach(g=>{"
+        "const div=document.createElement('div');div.className='chasing-group';"
+        "div.innerHTML=`<h3 id='gname_${g.groupId}' onclick='editGName(${g.groupId},\"${g.name}\")'>${g.name}</h3>"
+        "<div class='group-info'>GPIOs: ${g.outputs.join(', ')} | ${g.interval}ms</div>`;"
+        "const btn=document.createElement('button');btn.className='delete';btn.textContent='Delete';btn.onclick=()=>deleteGroup(g.groupId);div.appendChild(btn);"
+        "cg.appendChild(div);});}else{cg.innerHTML='<p class=info>No active groups</p>';}"
         "const o=document.getElementById('outputs');o.innerHTML='';"
         "d.outputs.forEach((out,i)=>{"
-        "const div=document.createElement('div');div.className='output'+(out.active?' on':'');"
-        "div.innerHTML=`<div><span>GPIO ${out.pin}</span>"
+        "const div=document.createElement('div');"
+        "let cls='output'+(out.active?' on':'')+(out.interval>0?' blinking':'')+(out.chasingGroup>=0?' chasing':'');"
+        "div.className=cls;"
+        "div.innerHTML=`<div><span class='output-name' onclick='editOName(${out.pin},\"${out.name}\")'>${out.name || 'GPIO '+out.pin}${out.chasingGroup>=0?' [G'+out.chasingGroup+']':''}</span>"
         "<div class='brightness'><input type='range' min='0' max='100' value='${out.brightness}' "
         "oninput='this.nextElementSibling.textContent=this.value+\"%\"' onchange='setBright(${out.pin},this.value)'>"
-        "<span>${out.brightness}%</span></div></div>"
+        "<span>${out.brightness}%</span></div>"
+        "<div class='interval'><span>Interval:</span><input type='number' min='0' max='10000' value='${out.interval}' "
+        "onchange='setInt(${out.pin},this.value)' ${out.chasingGroup>=0?'disabled':''}><span>ms</span></div></div>"
         "<div class='toggle ${out.active?'on':''}' onclick='tog(${out.pin})'></div>`;"
         "o.appendChild(div);});}catch(e){console.error(e);}}"));
         
@@ -713,6 +1130,37 @@ void initializeWebServer() {
         server->sendContent(F("async function setBright(pin,val){try{const r=await fetch('/api/status');const d=await r.json();"
         "const out=d.outputs.find(o=>o.pin===pin);await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({pin:pin,active:out.active,brightness:parseInt(val)})});}catch(e){console.error(e);}}"));
+        
+        server->sendContent(F("async function setInt(pin,val){try{await fetch('/api/interval',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({pin:pin,interval:parseInt(val)})});load();}catch(e){console.error(e);}}"));
+        
+        server->sendContent(F("async function deleteGroup(gid){if(!confirm('Delete chasing group '+gid+'?'))return;"
+        "try{await fetch('/api/chasing/delete',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({groupId:gid})});load();}catch(e){console.error(e);}}"));
+        
+        server->sendContent(F("async function editGName(gid,oldName){"
+        "const name=prompt('Enter new name for group:',oldName);"
+        "if(!name||name===oldName)return;"
+        "try{await fetch('/api/chasing/name',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({groupId:gid,name:name})});load();}catch(e){alert('Error: '+e);console.error(e);}}"));
+        
+        server->sendContent(F("async function editOName(pin,oldName){"
+        "const name=prompt('Enter new name for output:',oldName||'GPIO '+pin);"
+        "if(!name||name===oldName)return;"
+        "try{await fetch('/api/name',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({pin:pin,name:name})});load();}catch(e){alert('Error: '+e);console.error(e);}}"));
+        
+        server->sendContent(F("async function createGroup(){try{"
+        "const gid=parseInt(document.getElementById('newGroupId').value);"
+        "const interval=parseInt(document.getElementById('newGroupInterval').value);"
+        "const outputs=[];"
+        "document.querySelectorAll('#outputSelector input[type=checkbox]:checked').forEach(cb=>outputs.push(parseInt(cb.value)));"
+        "if(outputs.length<2){alert('Please select at least 2 outputs');return;}"
+        "if(gid<1||gid>255){alert('Group ID must be 1-255');return;}"
+        "if(interval<50){alert('Interval must be at least 50ms');return;}"
+        "await fetch('/api/chasing/create',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({groupId:gid,interval:interval,outputs:outputs})});"
+        "document.getElementById('newGroupId').value=parseInt(gid)+1;load();}catch(e){alert('Error: '+e);console.error(e);}}"));;
         
         server->sendContent(F("async function allOn(){try{const r=await fetch('/api/status');const d=await r.json();"
         "for(const o of d.outputs){await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},"
@@ -750,6 +1198,24 @@ void initializeWebServer() {
             output["active"] = outputStates[i];
             output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
             output["name"] = outputNames[i];
+            output["interval"] = outputIntervals[i];
+            output["chasingGroup"] = outputChasingGroup[i];
+        }
+        
+        // Add chasing groups info
+        JsonArray groups = doc.createNestedArray("chasingGroups");
+        for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+            if (chasingGroups[i].active) {
+                JsonObject group = groups.createNestedObject();
+                group["groupId"] = chasingGroups[i].groupId;
+                group["name"] = chasingGroups[i].name;
+                group["interval"] = chasingGroups[i].interval;
+                group["outputCount"] = chasingGroups[i].outputCount;
+                JsonArray groupOutputs = group.createNestedArray("outputs");
+                for (int j = 0; j < chasingGroups[i].outputCount; j++) {
+                    groupOutputs.add(outputPins[chasingGroups[i].outputIndices[j]]);
+                }
+            }
         }
         
         String response;
@@ -818,6 +1284,59 @@ void initializeWebServer() {
         }
     });
     
+    // API endpoint for updating output blink interval
+    server->on("/api/interval", HTTP_POST, []() {
+        unsigned long startTime = millis();
+        IPAddress clientIP = server->client().remoteIP();
+        String body = server->arg("plain");
+        Serial.print("[WEB] POST /api/interval from ");
+        Serial.print(clientIP.toString());
+        Serial.print(" (");
+        Serial.print(body.length());
+        Serial.println(" bytes)");
+        
+        DynamicJsonDocument doc(512);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (error) {
+            Serial.print("[ERROR] JSON deserialization failed: ");
+            Serial.println(error.c_str());
+            server->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        int pin = doc["pin"];
+        unsigned int interval = doc["interval"];
+        
+        Serial.print("[WEB] Interval update request: GPIO ");
+        Serial.print(pin);
+        Serial.print(" -> ");
+        Serial.print(interval);
+        Serial.println("ms");
+        
+        // Find output index by pin
+        int outputIndex = -1;
+        for (int i = 0; i < MAX_OUTPUTS; i++) {
+            if (outputPins[i] == pin) {
+                outputIndex = i;
+                break;
+            }
+        }
+        
+        if (outputIndex >= 0) {
+            setOutputInterval(outputIndex, interval);
+            unsigned long duration = millis() - startTime;
+            Serial.print("[WEB] Interval update complete (");
+            Serial.print(duration);
+            Serial.println("ms)");
+            server->send(200, "application/json", "{\"success\":true}");
+        } else {
+            Serial.print("[ERROR] GPIO pin not found: ");
+            Serial.println(pin);
+            server->send(404, "application/json", "{\"error\":\"Output not found\"}");
+        }
+    });
+    
     // API endpoint for control
     server->on("/api/control", HTTP_POST, []() {
         unsigned long startTime = millis();
@@ -861,6 +1380,134 @@ void initializeWebServer() {
         server->send(200, "application/json", "{\"status\":\"ok\"}");
     });
     
+    // API endpoint for creating chasing group
+    server->on("/api/chasing/create", HTTP_POST, []() {
+        unsigned long startTime = millis();
+        IPAddress clientIP = server->client().remoteIP();
+        String body = server->arg("plain");
+        Serial.print("[WEB] POST /api/chasing/create from ");
+        Serial.print(clientIP.toString());
+        Serial.print(" (");
+        Serial.print(body.length());
+        Serial.println(" bytes)");
+        
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (error) {
+            Serial.print("[ERROR] JSON deserialization failed: ");
+            Serial.println(error.c_str());
+            server->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        uint8_t groupId = doc["groupId"];
+        unsigned int interval = doc["interval"];
+        JsonArray outputs = doc["outputs"];
+        const char* groupName = doc.containsKey("name") ? doc["name"].as<const char*>() : nullptr;
+        
+        if (outputs.size() == 0 || outputs.size() > 8) {
+            server->send(400, "application/json", "{\"error\":\"Invalid output count (1-8)\"}");
+            return;
+        }
+        
+        // Convert output pins to indices
+        uint8_t outputIndices[8];
+        uint8_t count = 0;
+        for (JsonVariant v : outputs) {
+            int pin = v.as<int>();
+            // Find output index by pin
+            for (int i = 0; i < MAX_OUTPUTS; i++) {
+                if (outputPins[i] == pin) {
+                    outputIndices[count++] = i;
+                    break;
+                }
+            }
+        }
+        
+        if (count != outputs.size()) {
+            server->send(400, "application/json", "{\"error\":\"Invalid GPIO pin(s)\"}");
+            return;
+        }
+        
+        createChasingGroup(groupId, outputIndices, count, interval, groupName);
+        
+        unsigned long duration = millis() - startTime;
+        Serial.print("[WEB] Chasing group created (");
+        Serial.print(duration);
+        Serial.println("ms)");
+        
+        server->send(200, "application/json", "{\"success\":true}");
+    });
+    
+    // API endpoint for deleting chasing group
+    server->on("/api/chasing/delete", HTTP_POST, []() {
+        IPAddress clientIP = server->client().remoteIP();
+        String body = server->arg("plain");
+        Serial.print("[WEB] POST /api/chasing/delete from ");
+        Serial.println(clientIP.toString());
+        
+        DynamicJsonDocument doc(256);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (error) {
+            server->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        uint8_t groupId = doc["groupId"];
+        deleteChasingGroup(groupId);
+        
+        server->send(200, "application/json", "{\"success\":true}");
+    });
+    
+    // API endpoint for updating chasing group name
+    server->on("/api/chasing/name", HTTP_POST, []() {
+        IPAddress clientIP = server->client().remoteIP();
+        String body = server->arg("plain");
+        Serial.print("[WEB] POST /api/chasing/name from ");
+        Serial.println(clientIP.toString());
+        
+        DynamicJsonDocument doc(256);
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (error) {
+            server->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        uint8_t groupId = doc["groupId"];
+        const char* newName = doc["name"];
+        
+        if (newName == nullptr || strlen(newName) == 0) {
+            server->send(400, "application/json", "{\"error\":\"Name cannot be empty\"}");
+            return;
+        }
+        
+        // Find and update group
+        bool found = false;
+        for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+            if (chasingGroups[i].active && chasingGroups[i].groupId == groupId) {
+                strncpy(chasingGroups[i].name, newName, 20);
+                chasingGroups[i].name[20] = '\0';
+                saveChasingGroups();
+                found = true;
+                Serial.print("[CHASING] Updated group ");
+                Serial.print(groupId);
+                Serial.print(" name to '");
+                Serial.print(newName);
+                Serial.println("'");
+                break;
+            }
+        }
+        
+        if (found) {
+            server->send(200, "application/json", "{\"success\":true}");
+        } else {
+            server->send(404, "application/json", "{\"error\":\"Group not found\"}");
+        }
+    });
+    
     // API endpoint to reset saved states
     server->on("/api/reset", HTTP_POST, []() {
         IPAddress clientIP = server->client().remoteIP();
@@ -888,9 +1535,12 @@ void initializeWebServer() {
     server->begin();
     Serial.println("[WEB] Web server started on port 80");
     Serial.println("[WEB] Available endpoints:");
-    Serial.println("[WEB]   GET  /              - Main control interface");
-    Serial.println("[WEB]   GET  /api/status    - System and output status");
-    Serial.println("[WEB]   POST /api/control   - Control output state/brightness");
-    Serial.println("[WEB]   POST /api/name      - Update output name");
-    Serial.println("[WEB]   POST /api/reset     - Reset all saved preferences");
+    Serial.println("[WEB]   GET  /                   - Main control interface");
+    Serial.println("[WEB]   GET  /api/status         - System and output status");
+    Serial.println("[WEB]   POST /api/control        - Control output state/brightness");
+    Serial.println("[WEB]   POST /api/name           - Update output name");
+    Serial.println("[WEB]   POST /api/interval       - Set output blink interval");
+    Serial.println("[WEB]   POST /api/chasing/create - Create chasing light group");
+    Serial.println("[WEB]   POST /api/chasing/delete - Delete chasing light group");
+    Serial.println("[WEB]   POST /api/reset          - Reset all saved preferences");
 }
