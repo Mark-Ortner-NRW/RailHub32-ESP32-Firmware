@@ -50,6 +50,9 @@ int outputPins[MAX_OUTPUTS] = LED_PINS;
 bool outputStates[MAX_OUTPUTS] = {false};
 int outputBrightness[MAX_OUTPUTS] = {255}; // 0-255 for PWM
 String outputNames[MAX_OUTPUTS]; // Custom names for outputs
+unsigned int outputIntervals[MAX_OUTPUTS] = {0}; // Blink interval in ms (0 = no blink)
+unsigned long lastBlinkTime[MAX_OUTPUTS] = {0}; // Last blink toggle time
+bool blinkState[MAX_OUTPUTS] = {false}; // Current blink state
 
 // Timing variables
 
@@ -133,6 +136,9 @@ void loop() {
         lastBroadcast = currentMillis;
         broadcastStatus();
     }
+    
+    // Update blinking outputs
+    updateBlinkingOutputs();
     
     // Check for config portal trigger button
     checkConfigPortalTrigger();
@@ -696,13 +702,15 @@ void saveOutputState(int index) {
     // Create keys for state and brightness
     String stateKey = "out_" + String(index) + "_s";
     String brightKey = "out_" + String(index) + "_b";
+    String intervalKey = "out_" + String(index) + "_i";
     
     size_t stateWritten = preferences.putBool(stateKey.c_str(), outputStates[index]);
     size_t brightWritten = preferences.putUChar(brightKey.c_str(), outputBrightness[index]);
+    size_t intervalWritten = preferences.putUInt(intervalKey.c_str(), outputIntervals[index]);
     
     preferences.end();
     
-    if (stateWritten > 0 && brightWritten > 0) {
+    if (stateWritten > 0 && brightWritten > 0 && intervalWritten > 0) {
         Serial.print("[NVRAM] Saved state for Output ");
         Serial.print(index);
         Serial.print(" (GPIO ");
@@ -771,12 +779,16 @@ void loadOutputStates() {
         String stateKey = "out_" + String(i) + "_s";
         String brightKey = "out_" + String(i) + "_b";
         String nameKey = "out_" + String(i) + "_n";
+        String intervalKey = "out_" + String(i) + "_i";
         
         // Load state (default to false if not found)
         outputStates[i] = preferences.getBool(stateKey.c_str(), false);
         
         // Load brightness (default to 255 if not found)
         outputBrightness[i] = preferences.getUChar(brightKey.c_str(), 255);
+        
+        // Load interval (default to 0 if not found)
+        outputIntervals[i] = preferences.getUInt(intervalKey.c_str(), 0);
         
         // Load custom name (default to empty string)
         outputNames[i] = preferences.getString(nameKey.c_str(), "");
@@ -844,6 +856,56 @@ void saveAllOutputStates() {
     Serial.println("ms)");
 }
 
+void updateBlinkingOutputs() {
+    unsigned long currentMillis = millis();
+    
+    for (int i = 0; i < MAX_OUTPUTS; i++) {
+        // Only process if output is active and has a blink interval set
+        if (outputStates[i] && outputIntervals[i] > 0) {
+            // Check if it's time to toggle
+            if (currentMillis - lastBlinkTime[i] >= outputIntervals[i]) {
+                lastBlinkTime[i] = currentMillis;
+                blinkState[i] = !blinkState[i];
+                
+                // Toggle the output
+                if (blinkState[i]) {
+                    ledcWrite(i, outputBrightness[i]);
+                } else {
+                    ledcWrite(i, 0);
+                }
+            }
+        } else if (outputStates[i] && outputIntervals[i] == 0) {
+            // No blinking - ensure output is solid on
+            if (!blinkState[i]) {
+                ledcWrite(i, outputBrightness[i]);
+                blinkState[i] = true;
+            }
+        }
+    }
+}
+
+void setOutputInterval(int index, unsigned int intervalMs) {
+    if (index < 0 || index >= MAX_OUTPUTS) return;
+    
+    outputIntervals[index] = intervalMs;
+    
+    // Reset blink state
+    lastBlinkTime[index] = millis();
+    blinkState[index] = false;
+    
+    if (outputStates[index]) {
+        if (intervalMs > 0) {
+            Serial.println("[INTERVAL] Output " + String(index) + " (GPIO " + String(outputPins[index]) + ") blinking every " + String(intervalMs) + "ms");
+        } else {
+            ledcWrite(index, outputBrightness[index]);
+            Serial.println("[INTERVAL] Output " + String(index) + " (GPIO " + String(outputPins[index]) + ") blinking disabled (solid)");
+        }
+    }
+    
+    // Save to preferences
+    saveOutputState(index);
+}
+
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
@@ -888,6 +950,7 @@ void broadcastStatus() {
         output["active"] = outputStates[i];
         output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
         output["name"] = outputNames[i].length() > 0 ? outputNames[i] : "";
+        output["interval"] = outputIntervals[i];
     }
     
     String jsonString;
@@ -1970,6 +2033,7 @@ void initializeWebServer() {
             output["active"] = outputStates[i];
             output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
             output["name"] = outputNames[i];
+            output["interval"] = outputIntervals[i];
         }
         
         String response;
@@ -2043,6 +2107,41 @@ void initializeWebServer() {
         } else {
             Serial.print("[ERROR] GPIO pin not found: ");
             Serial.println(pin);
+            request->send(404, "application/json", "{\"error\":\"Output not found\"}");
+        }
+    });
+    
+    // API endpoint for interval
+    server->on("/api/interval", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        DynamicJsonDocument doc(512);
+        DeserializationError error = deserializeJson(doc, (const char*)data);
+        
+        if (error) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        int pin = doc["pin"];
+        unsigned int interval = doc["interval"];
+        
+        // Find output index by pin
+        int outputIndex = -1;
+        for (int i = 0; i < MAX_OUTPUTS; i++) {
+            if (outputPins[i] == pin) {
+                outputIndex = i;
+                break;
+            }
+        }
+        
+        if (outputIndex >= 0) {
+            setOutputInterval(outputIndex, interval);
+            
+            // Broadcast update to all WebSocket clients
+            broadcastStatus();
+            
+            request->send(200, "application/json", "{\"success\":true}");
+        } else {
             request->send(404, "application/json", "{\"error\":\"Output not found\"}");
         }
     });
