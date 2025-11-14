@@ -4,6 +4,7 @@
 #include <WiFiManager.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
+#include <WebSocketsServer.h>
 #include "config.h"
 
 // Forward declarations
@@ -29,7 +30,12 @@ void loadCustomParameters();
 // Global variables
 // Web Server
 ESP8266WebServer* server = nullptr;
+WebSocketsServer* ws = nullptr;
 WiFiManager wifiManager;
+
+// WebSocket broadcast timer
+unsigned long lastBroadcast = 0;
+const unsigned long BROADCAST_INTERVAL = 500; // Broadcast every 500ms
 
 #define MAX_CHASING_GROUPS 4
 
@@ -88,6 +94,74 @@ uint8_t chasingGroupCount = 0;
 
 // Timing variables
 
+void broadcastStatus(); // Forward declaration
+
+void wsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[WS] Client #%u disconnected\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = ws->remoteIP(num);
+                Serial.printf("[WS] Client #%u connected from %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+                broadcastStatus(); // Send current status to new client
+            }
+            break;
+        case WStype_TEXT:
+            Serial.printf("[WS] Received from #%u: %s\n", num, payload);
+            break;
+    }
+}
+
+void broadcastStatus() {
+    if (!ws) return;
+    
+    DynamicJsonDocument doc(2048);
+    doc["macAddress"] = macAddress;
+    doc["name"] = customDeviceName;
+    doc["wifiMode"] = WiFi.getMode() == WIFI_AP ? "AP" : "STA";
+    doc["ip"] = WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+    doc["ssid"] = WiFi.getMode() == WIFI_AP ? String(AP_SSID) : WiFi.SSID();
+    doc["apClients"] = WiFi.softAPgetStationNum();
+    doc["freeHeap"] = ESP.getFreeHeap();
+    doc["uptime"] = millis();
+    doc["buildDate"] = String(__DATE__) + " " + String(__TIME__);
+    doc["flashUsed"] = ESP.getSketchSize();
+    doc["flashFree"] = ESP.getFreeSketchSpace();
+    doc["flashPartition"] = 1044464; // Program partition size (from platformio build output)
+    
+    JsonArray outputs = doc.createNestedArray("outputs");
+    for (int i = 0; i < MAX_OUTPUTS; i++) {
+        JsonObject output = outputs.createNestedObject();
+        output["pin"] = outputPins[i];
+        output["active"] = outputStates[i];
+        output["brightness"] = map(outputBrightness[i], 0, 255, 0, 100);
+        output["name"] = outputNames[i];
+        output["interval"] = outputIntervals[i];
+        output["chasingGroup"] = outputChasingGroup[i];
+    }
+    
+    JsonArray groups = doc.createNestedArray("chasingGroups");
+    for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
+        if (chasingGroups[i].active) {
+            JsonObject group = groups.createNestedObject();
+            group["groupId"] = chasingGroups[i].groupId;
+            group["name"] = chasingGroups[i].name;
+            group["interval"] = chasingGroups[i].interval;
+            group["outputCount"] = chasingGroups[i].outputCount;
+            JsonArray groupOutputs = group.createNestedArray("outputs");
+            for (int j = 0; j < chasingGroups[i].outputCount; j++) {
+                groupOutputs.add(outputPins[chasingGroups[i].outputIndices[j]]);
+            }
+        }
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    ws->broadcastTXT(response);
+}
+
 void setup() {
     Serial.begin(115200);
     delay(100);
@@ -137,6 +211,12 @@ void setup() {
         server = new ESP8266WebServer(80);
         initializeWebServer();
         Serial.println("[WEB] Web server initialized successfully");
+        
+        Serial.println("[INIT] Starting WebSocket server on port 81...");
+        ws = new WebSocketsServer(81);
+        ws->begin();
+        ws->onEvent(wsEvent);
+        Serial.println("[WS] WebSocket server started on port 81");
     } else {
         Serial.println("[WARN] WiFi not connected - web server not started");
     }
@@ -156,6 +236,18 @@ void loop() {
     // Handle web server requests
     if (server) {
         server->handleClient();
+    }
+    
+    // Handle WebSocket events
+    if (ws) {
+        ws->loop();
+        
+        // Broadcast status periodically for real-time updates
+        unsigned long now = millis();
+        if (now - lastBroadcast >= BROADCAST_INTERVAL) {
+            broadcastStatus();
+            lastBroadcast = now;
+        }
     }
     
     // Update mDNS responder
@@ -615,6 +707,9 @@ void executeOutputCommand(int pin, bool active, int brightnessPercent) {
     // Save the state to persistent storage
     saveOutputState(outputIndex);
     
+    // Broadcast update to all WebSocket clients
+    broadcastStatus();
+    
     unsigned long duration = millis() - startTime;
     String nameStr = outputNames[outputIndex].length() > 0 ? " [" + outputNames[outputIndex] + "]" : "";
     Serial.println("[CMD] Output " + String(outputIndex) + " (GPIO " + String(pin) + ")" + nameStr + ": " + 
@@ -1067,6 +1162,11 @@ void initializeWebServer() {
         "button{background:#6c9bcf;color:#fff;border:none;padding:10px 20px;cursor:pointer;margin-right:10px}"
         "button:hover{background:#5a8bc0}button.delete{background:#e74c3c}button.delete:hover{background:#c0392b}"
         ".info{font-size:0.9rem;color:#999}"
+        ".tabs{display:flex;gap:5px;margin-bottom:15px}.tab{background:#333;padding:10px 20px;cursor:pointer;border:none;color:#999}"
+        ".tab.active{background:#6c9bcf;color:#fff}.tab-content{display:none}.tab-content.active{display:block}"
+        ".storage-bar{background:#333;height:20px;border-radius:3px;overflow:hidden;margin-top:5px;position:relative}"
+        ".storage-fill{background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;transition:width 0.3s}"
+        ".storage-text{position:absolute;top:2px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)}"
         ".modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}"
         ".modal.show{display:flex}"
         ".modal-content{background:#2a2a3a;padding:25px;border-radius:8px;min-width:350px;max-width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.5)}"
@@ -1088,45 +1188,87 @@ void initializeWebServer() {
         "<button onclick='saveModalName()'>Save</button>"
         "</div></div></div>"));
         
+        // Confirmation modal
+        server->sendContent(F("<div id='confirmModal' class='modal'><div class='modal-content'>"
+        "<div class='modal-header' id='confirmTitle'>Confirm</div>"
+        "<div id='confirmMessage' style='margin-bottom:20px;color:#ccc'></div>"
+        "<div class='modal-buttons'>"
+        "<button class='cancel' onclick='closeConfirm()'>Cancel</button>"
+        "<button class='delete' onclick='confirmYes()'>Delete</button>"
+        "</div></div></div>"));
+        
+        // Alert modal
+        server->sendContent(F("<div id='alertModal' class='modal'><div class='modal-content'>"
+        "<div class='modal-header' id='alertTitle'>Alert</div>"
+        "<div id='alertMessage' style='margin-bottom:20px;color:#ccc'></div>"
+        "<div class='modal-buttons'>"
+        "<button onclick='closeAlert()'>OK</button>"
+        "</div></div></div>"));
+        
         // Body start
         server->sendContent(F("<div class='card'><h1>🚂 RailHub8266</h1><p class='info'>"));
         server->sendContent(String(customDeviceName));
-        server->sendContent(F("</p></div><div class='card'><h2>Status</h2><div class='status'>"
-        "<div class='stat'><div class='value' id='heap'>-</div><div class='label'>Free RAM</div></div>"
+        server->sendContent(F("</p></div><div class='card'><div class='tabs'>"
+        "<button class='tab active' onclick='showTab(0)'>Status</button>"
+        "<button class='tab' onclick='showTab(1)'>Settings</button>"
+        "</div><div class='tab-content active' id='tab0'><h2>Status</h2><div class='status'>"
         "<div class='stat'><div class='value' id='uptime'>-</div><div class='label'>Uptime</div></div>"
-        "</div></div><div class='card'><h2>Controls</h2>"
+        "<div class='stat'><div class='value' id='buildDate'>-</div><div class='label'>Build Date</div></div>"
+        "</div><div style='margin-top:15px'><div class='label'>RAM (80 KB)</div>"
+        "<div class='storage-bar'><div class='storage-fill' id='ramFill' style='width:0%'></div>"
+        "<div class='storage-text' id='ramText'>-</div></div></div>"
+        "<div style='margin-top:15px'><div class='label'>Program Flash (1 MB)</div>"
+        "<div class='storage-bar'><div class='storage-fill' id='storageFill' style='width:0%'></div>"
+        "<div class='storage-text' id='storageText'>-</div></div></div>"
+        "<div style='margin-top:20px'><h2>Controls</h2>"
         "<button onclick='allOn()'>All ON</button><button onclick='allOff()'>All OFF</button><button onclick='refresh()'>Refresh</button>"
-        "</div><div class='card'><h2>Chasing Light Groups</h2>"
+        "</div></div><div class='tab-content' id='tab1'><h2>Chasing Light Groups</h2>"
         "<div style='margin-bottom:15px'>"
         "<label style='display:block;margin-bottom:5px'>Group ID:</label>"
         "<input type='number' id='newGroupId' min='1' max='255' value='1' style='width:100px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px'><br>"
         "<label style='display:block;margin:10px 0 5px'>Interval (ms):</label>"
-        "<input type='number' id='newGroupInterval' min='50' max='10000' value='500' style='width:100px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px'><br>"
+        "<input type='text' id='newGroupInterval' value='500' style='width:100px;padding:4px;background:#555;border:1px solid #666;color:#fff;border-radius:3px'><br>"
         "<label style='display:block;margin:10px 0 5px'>Select Outputs:</label>"
         "<div id='outputSelector'></div>"
         "<button onclick='createGroup()' style='margin-top:10px'>Create Group</button>"
-        "</div><div id='chasingGroups'></div></div>"
-        "<div class='card'><h2>Outputs</h2><div class='outputs' id='outputs'></div></div>"));
+        "</div><div id='chasingGroups'></div>"
+        "<h2 style='margin-top:20px'>Outputs</h2><div class='outputs' id='outputs'></div></div></div>"));
         
         // JavaScript chunk
-        server->sendContent(F("<script>async function load(){try{const r=await fetch('/api/status');const d=await r.json();"
-        "document.getElementById('heap').textContent=(d.freeHeap/1024).toFixed(1)+'KB';"
+        server->sendContent(F("<script>function showTab(n){localStorage.setItem('activeTab',n);document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===n));"
+        "document.querySelectorAll('.tab-content').forEach((c,i)=>c.classList.toggle('active',i===n));}"
+        "let wsData=null;async function load(){let d;if(wsData){d=wsData;wsData=null;}else{try{const r=await fetch('/api/status');d=await r.json();}catch(err){console.error('[LOAD] Error:',err);return;}}if(!d)return;try{const activeEl=document.activeElement;const isFocused=activeEl&&activeEl.tagName==='INPUT'&&activeEl.type==='text'&&activeEl.closest('.interval');"
+        "const focusedPin=isFocused?activeEl.closest('.output')?.querySelector('.output-name')?.getAttribute('onclick')?.match(/\\d+/)?.[0]:null;"
+        "const cursorPos=isFocused?activeEl.selectionStart:null;const focusedVal=isFocused?activeEl.value:null;"
+        "const usedRam=80-(d.freeHeap/1024);const ramPct=Math.round((usedRam/80)*100);"
+        "document.getElementById('ramFill').style.width=ramPct+'%';"
+        "document.getElementById('ramText').textContent=usedRam.toFixed(1)+'KB / 80KB ('+ramPct+'%)';"
         "const s=Math.floor(d.uptime/1000);document.getElementById('uptime').textContent=s+'s';"
+        "if(d.buildDate)document.getElementById('buildDate').textContent=d.buildDate;"
+        "if(d.flashUsed&&d.flashPartition){const pct=Math.round((d.flashUsed/d.flashPartition)*100);"
+        "document.getElementById('storageFill').style.width=pct+'%';"
+        "document.getElementById('storageText').textContent=(d.flashUsed/1024).toFixed(0)+'KB / '+(d.flashPartition/1024).toFixed(0)+'KB ('+pct+'%)';}"
         "const sel=document.getElementById('outputSelector');"
         "const checked=[];document.querySelectorAll('#outputSelector input:checked').forEach(cb=>checked.push(cb.value));"
         "sel.innerHTML='';"
         "d.outputs.forEach(out=>{"
         "const lbl=document.createElement('label');lbl.style.display='block';lbl.style.marginBottom='5px';"
         "const cb=document.createElement('input');cb.type='checkbox';cb.value=out.pin;cb.id='out_'+out.pin;"
-        "cb.disabled=out.chasingGroup>=0;if(checked.includes(out.pin.toString()))cb.checked=true;lbl.appendChild(cb);"
-        "lbl.appendChild(document.createTextNode(' GPIO '+out.pin+(out.chasingGroup>=0?' [In Group '+out.chasingGroup+']':'')));"
+        "cb.disabled=out.chasingGroup>=0;"
+        "if(out.chasingGroup<0&&checked.includes(out.pin.toString()))cb.checked=true;"
+        "lbl.appendChild(cb);"
+        "const outName=out.name||'GPIO '+out.pin;"
+        "let groupTag='';"
+        "if(out.chasingGroup>=0){const grp=d.chasingGroups.find(g=>g.groupId===out.chasingGroup);groupTag=grp?' [In '+grp.name+']':' [In Group '+out.chasingGroup+']';}"
+        "lbl.appendChild(document.createTextNode(' '+outName+groupTag));"
         "sel.appendChild(lbl);});"
         "const cg=document.getElementById('chasingGroups');cg.innerHTML='';"
         "if(d.chasingGroups&&d.chasingGroups.length>0){"
         "d.chasingGroups.forEach(g=>{"
         "const div=document.createElement('div');div.className='chasing-group';"
+        "const outNames=g.outputs.map(pin=>{const o=d.outputs.find(x=>x.pin===pin);return o?(o.name||'GPIO '+pin):'GPIO '+pin;}).join(', ');"
         "div.innerHTML=`<h3 id='gname_${g.groupId}' onclick='editGName(${g.groupId},\"${g.name}\")'>${g.name}</h3>"
-        "<div class='group-info'>GPIOs: ${g.outputs.join(', ')} | ${g.interval}ms</div>`;"
+        "<div class='group-info'>${outNames} | ${g.interval}ms</div>`;"
         "const btn=document.createElement('button');btn.className='delete';btn.textContent='Delete';btn.onclick=()=>deleteGroup(g.groupId);div.appendChild(btn);"
         "cg.appendChild(div);});}else{cg.innerHTML='<p class=info>No active groups</p>';}"
         "const o=document.getElementById('outputs');o.innerHTML='';"
@@ -1134,14 +1276,20 @@ void initializeWebServer() {
         "const div=document.createElement('div');"
         "let cls='output'+(out.active?' on':'')+(out.interval>0?' blinking':'')+(out.chasingGroup>=0?' chasing':'');"
         "div.className=cls;"
-        "div.innerHTML=`<div><span class='output-name' onclick='editOName(${out.pin},\"${out.name}\")'>${out.name || 'GPIO '+out.pin}${out.chasingGroup>=0?' [G'+out.chasingGroup+']':''}</span>"
+        "let groupTag='';"
+        "if(out.chasingGroup>=0){const grp=d.chasingGroups.find(g=>g.groupId===out.chasingGroup);groupTag=grp?' ['+grp.name+']':' [G'+out.chasingGroup+']';}"
+        "div.innerHTML=`<div><span class='output-name' onclick='editOName(${out.pin},\"${out.name}\")'>${out.name || 'GPIO '+out.pin}${groupTag}</span>"
         "<div class='brightness'><input type='range' min='0' max='100' value='${out.brightness}' "
         "oninput='this.nextElementSibling.textContent=this.value+\"%\"' onchange='setBright(${out.pin},this.value)'>"
         "<span>${out.brightness}%</span></div>"
-        "<div class='interval'><span>Interval:</span><input type='number' min='0' max='10000' value='${out.interval}' "
+        "<div class='interval'><span>Interval:</span><input type='text' value='${out.interval}' "
         "onchange='setInt(${out.pin},this.value)' ${out.chasingGroup>=0?'disabled':''}><span>ms</span></div></div>"
         "<div class='toggle ${out.active?'on':''}' onclick='tog(${out.pin})'></div>`;"
-        "o.appendChild(div);});}catch(e){console.error(e);}}"));
+        "o.appendChild(div);});"
+        "if(focusedPin){const inputs=document.querySelectorAll('.interval input[type=text]');"
+        "inputs.forEach(inp=>{const pin=inp.closest('.output')?.querySelector('.output-name')?.getAttribute('onclick')?.match(/\\d+/)?.[0];"
+        "if(pin===focusedPin){inp.focus();if(cursorPos!==null){inp.setSelectionRange(cursorPos,cursorPos);inp.value=focusedVal||inp.value;}}});}"
+        "}catch(e){console.error(e);}}"));
         
         server->sendContent(F("async function tog(pin){try{const r=await fetch('/api/status');const d=await r.json();"
         "const out=d.outputs.find(o=>o.pin===pin);await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},"
@@ -1152,11 +1300,30 @@ void initializeWebServer() {
         "body:JSON.stringify({pin:pin,active:out.active,brightness:parseInt(val)})});}catch(e){console.error(e);}}"));
         
         server->sendContent(F("async function setInt(pin,val){try{await fetch('/api/interval',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({pin:pin,interval:parseInt(val)})});load();}catch(e){console.error(e);}}"));
+        "body:JSON.stringify({pin:pin,interval:parseInt(val)||0})});}catch(e){console.error(e);}}"));
         
-        server->sendContent(F("async function deleteGroup(gid){if(!confirm('Delete chasing group '+gid+'?'))return;"
+        server->sendContent(F("let confirmCallback=null;function openConfirm(title,message,callback){"
+        "document.getElementById('confirmTitle').textContent=title;"
+        "document.getElementById('confirmMessage').textContent=message;"
+        "confirmCallback=callback;"
+        "document.getElementById('confirmModal').classList.add('show');}"
+        "function closeConfirm(){document.getElementById('confirmModal').classList.remove('show');confirmCallback=null;}"
+        "function confirmYes(){if(confirmCallback){confirmCallback();}closeConfirm();}"
+        "document.getElementById('confirmModal').addEventListener('click',e=>{"
+        "if(e.target.id==='confirmModal'){closeConfirm();}});"));
+        
+        server->sendContent(F("function showAlert(title,message){"
+        "document.getElementById('alertTitle').textContent=title;"
+        "document.getElementById('alertMessage').textContent=message;"
+        "document.getElementById('alertModal').classList.add('show');}"
+        "function closeAlert(){document.getElementById('alertModal').classList.remove('show');}"
+        "document.getElementById('alertModal').addEventListener('click',e=>{"
+        "if(e.target.id==='alertModal'){closeAlert();}});"));
+        
+        server->sendContent(F("async function deleteGroup(gid){"
+        "openConfirm('Delete Group','Are you sure you want to delete this chasing group?',async()=>{"
         "try{await fetch('/api/chasing/delete',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({groupId:gid})});load();}catch(e){console.error(e);}}"));
+        "body:JSON.stringify({groupId:gid})});load();}catch(e){console.error(e);}});}"));
         
         server->sendContent(F("let modalCallback=null;function openModal(title,currentVal,callback){"
         "document.getElementById('modalTitle').textContent=title;"
@@ -1168,7 +1335,7 @@ void initializeWebServer() {
         "function closeModal(){document.getElementById('nameModal').classList.remove('show');modalCallback=null;}"
         "function saveModalName(){const val=document.getElementById('modalInput').value.trim();"
         "if(modalCallback){modalCallback(val);}closeModal();}"
-        "document.getElementById('modalInput').addEventListener('keypress',e=>{"
+        "document.getElementById('modalInput').addEventListener('keydown',e=>{"
         "if(e.key==='Enter'){saveModalName();}else if(e.key==='Escape'){closeModal();}});"
         "document.getElementById('nameModal').addEventListener('click',e=>{"
         "if(e.target.id==='nameModal'){closeModal();}});"));
@@ -1178,36 +1345,45 @@ void initializeWebServer() {
         "if(name===oldName)return;"
         "const finalName=name.trim()||'Group '+gid;"
         "try{await fetch('/api/chasing/name',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({groupId:gid,name:finalName})});load();}catch(e){alert('Error: '+e);console.error(e);}});}"));
+        "body:JSON.stringify({groupId:gid,name:finalName})});load();}catch(e){showAlert('Error',e.toString());console.error(e);}});}"));
         
         server->sendContent(F("async function editOName(pin,oldName){"
         "openModal('Edit Output Name',oldName||'GPIO '+pin,async(name)=>{"
         "const finalName=name.trim();"
         "if(finalName===(oldName||'GPIO '+pin))return;"
         "try{await fetch('/api/name',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({pin:pin,name:finalName})});load();}catch(e){alert('Error: '+e);console.error(e);}});}"));
+        "body:JSON.stringify({pin:pin,name:finalName})});load();}catch(e){showAlert('Error',e.toString());console.error(e);}});}"));
         
         server->sendContent(F("async function createGroup(){try{"
         "const gid=parseInt(document.getElementById('newGroupId').value);"
         "const interval=parseInt(document.getElementById('newGroupInterval').value);"
         "const outputs=[];"
         "document.querySelectorAll('#outputSelector input[type=checkbox]:checked').forEach(cb=>outputs.push(parseInt(cb.value)));"
-        "if(outputs.length<2){alert('Please select at least 2 outputs');return;}"
-        "if(gid<1||gid>255){alert('Group ID must be 1-255');return;}"
-        "if(interval<50){alert('Interval must be at least 50ms');return;}"
+        "if(outputs.length<2){showAlert('Validation Error','Please select at least 2 outputs');return;}"
+        "if(gid<1||gid>255){showAlert('Validation Error','Group ID must be 1-255');return;}"
+        "if(interval<50){showAlert('Validation Error','Interval must be at least 50ms');return;}"
         "await fetch('/api/chasing/create',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({groupId:gid,interval:interval,outputs:outputs})});"
-        "document.getElementById('newGroupId').value=parseInt(gid)+1;load();}catch(e){alert('Error: '+e);console.error(e);}}"));;
+        "document.getElementById('newGroupId').value=parseInt(gid)+1;load();}catch(e){showAlert('Error',e.toString());console.error(e);}}"));;
         
         server->sendContent(F("async function allOn(){try{const r=await fetch('/api/status');const d=await r.json();"
         "for(const o of d.outputs){await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({pin:o.pin,active:true,brightness:100})});}load();}catch(e){console.error(e);}}"));
+        "body:JSON.stringify({pin:o.pin,active:true,brightness:100})});}}catch(e){console.error(e);}}"));
         
         server->sendContent(F("async function allOff(){try{const r=await fetch('/api/status');const d=await r.json();"
         "for(const o of d.outputs){await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({pin:o.pin,active:false,brightness:0})});}load();}catch(e){console.error(e);}}"));
+        "body:JSON.stringify({pin:o.pin,active:false,brightness:0})});}}catch(e){console.error(e);}}"));
         
-        server->sendContent(F("function refresh(){load();}load();setInterval(load,2000);</script></body></html>"));
+        server->sendContent(F("function refresh(){wsData=null;load();}"));
+        
+        server->sendContent(F("let ws;function connectWS(){const wsUrl='ws://'+window.location.hostname+':81';"
+        "ws=new WebSocket(wsUrl);ws.onopen=()=>{console.log('[WS] Connected');};"
+        "ws.onmessage=(e)=>{try{wsData=JSON.parse(e.data);load();}catch(err){console.error('[WS] Parse error:',err);}};"
+        "ws.onerror=(e)=>{console.error('[WS] Error:',e);};"
+        "ws.onclose=()=>{console.log('[WS] Disconnected, reconnecting...');setTimeout(connectWS,2000);}};"
+        "const savedTab=localStorage.getItem('activeTab');if(savedTab!==null){showTab(parseInt(savedTab));}load().then(()=>connectWS());</script>"
+        "<footer style='text-align:center;padding:20px;margin-top:40px;border-top:1px solid #333;color:#666;font-size:0.9em;'>Made with ❤️ by innoMO</footer>"
+        "</body></html>"));
         server->sendContent("");  // End chunked transfer
     });
     
@@ -1227,6 +1403,9 @@ void initializeWebServer() {
         doc["apClients"] = WiFi.softAPgetStationNum();
         doc["freeHeap"] = ESP.getFreeHeap();
         doc["uptime"] = millis();
+        doc["flashTotal"] = ESP.getFlashChipSize();
+        doc["flashUsed"] = ESP.getSketchSize();
+        doc["flashFree"] = ESP.getFreeSketchSpace();
         
         JsonArray outputs = doc.createNestedArray("outputs");
         for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -1313,6 +1492,7 @@ void initializeWebServer() {
             Serial.print("[WEB] Name update complete (");
             Serial.print(duration);
             Serial.println("ms)");
+            broadcastStatus();
             server->send(200, "application/json", "{\"success\":true}");
         } else {
             Serial.print("[ERROR] GPIO pin not found: ");
@@ -1366,6 +1546,7 @@ void initializeWebServer() {
             Serial.print("[WEB] Interval update complete (");
             Serial.print(duration);
             Serial.println("ms)");
+            broadcastStatus();
             server->send(200, "application/json", "{\"success\":true}");
         } else {
             Serial.print("[ERROR] GPIO pin not found: ");
@@ -1543,6 +1724,7 @@ void initializeWebServer() {
         }
         
         if (found) {
+            broadcastStatus();
             server->send(200, "application/json", "{\"success\":true}");
         } else {
             server->send(404, "application/json", "{\"error\":\"Group not found\"}");
