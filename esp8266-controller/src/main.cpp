@@ -1066,7 +1066,27 @@ void initializeWebServer() {
         ".output-name:hover{color:#8bb5e0;text-decoration:underline}"
         "button{background:#6c9bcf;color:#fff;border:none;padding:10px 20px;cursor:pointer;margin-right:10px}"
         "button:hover{background:#5a8bc0}button.delete{background:#e74c3c}button.delete:hover{background:#c0392b}"
-        ".info{font-size:0.9rem;color:#999}</style></head><body>"));
+        ".info{font-size:0.9rem;color:#999}"
+        ".modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}"
+        ".modal.show{display:flex}"
+        ".modal-content{background:#2a2a3a;padding:25px;border-radius:8px;min-width:350px;max-width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.5)}"
+        ".modal-header{font-size:1.2rem;font-weight:bold;margin-bottom:15px;color:#6c9bcf}"
+        ".modal-input{width:100%;padding:10px;background:#555;border:1px solid #666;color:#fff;border-radius:4px;font-size:1rem;margin-bottom:15px}"
+        ".modal-input:focus{outline:none;border-color:#6c9bcf}"
+        ".modal-buttons{display:flex;gap:10px;justify-content:flex-end}"
+        ".modal-buttons button{min-width:80px}"
+        ".modal-buttons .cancel{background:#666}"
+        ".modal-buttons .cancel:hover{background:#555}"
+        "</style></head><body>"));
+        
+        // Modal dialog for name editing
+        server->sendContent(F("<div id='nameModal' class='modal'><div class='modal-content'>"
+        "<div class='modal-header' id='modalTitle'>Edit Name</div>"
+        "<input type='text' id='modalInput' class='modal-input' maxlength='20' placeholder='Enter name...'>"
+        "<div class='modal-buttons'>"
+        "<button class='cancel' onclick='closeModal()'>Cancel</button>"
+        "<button onclick='saveModalName()'>Save</button>"
+        "</div></div></div>"));
         
         // Body start
         server->sendContent(F("<div class='card'><h1>🚂 RailHub8266</h1><p class='info'>"));
@@ -1138,17 +1158,34 @@ void initializeWebServer() {
         "try{await fetch('/api/chasing/delete',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({groupId:gid})});load();}catch(e){console.error(e);}}"));
         
+        server->sendContent(F("let modalCallback=null;function openModal(title,currentVal,callback){"
+        "document.getElementById('modalTitle').textContent=title;"
+        "const input=document.getElementById('modalInput');"
+        "input.value=currentVal||'';"
+        "modalCallback=callback;"
+        "document.getElementById('nameModal').classList.add('show');"
+        "setTimeout(()=>input.focus(),100);}"
+        "function closeModal(){document.getElementById('nameModal').classList.remove('show');modalCallback=null;}"
+        "function saveModalName(){const val=document.getElementById('modalInput').value.trim();"
+        "if(modalCallback){modalCallback(val);}closeModal();}"
+        "document.getElementById('modalInput').addEventListener('keypress',e=>{"
+        "if(e.key==='Enter'){saveModalName();}else if(e.key==='Escape'){closeModal();}});"
+        "document.getElementById('nameModal').addEventListener('click',e=>{"
+        "if(e.target.id==='nameModal'){closeModal();}});"));
+        
         server->sendContent(F("async function editGName(gid,oldName){"
-        "const name=prompt('Enter new name for group:',oldName);"
-        "if(!name||name===oldName)return;"
+        "openModal('Edit Group Name',oldName,async(name)=>{"
+        "if(name===oldName)return;"
+        "const finalName=name.trim()||'Group '+gid;"
         "try{await fetch('/api/chasing/name',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({groupId:gid,name:name})});load();}catch(e){alert('Error: '+e);console.error(e);}}"));
+        "body:JSON.stringify({groupId:gid,name:finalName})});load();}catch(e){alert('Error: '+e);console.error(e);}});}"));
         
         server->sendContent(F("async function editOName(pin,oldName){"
-        "const name=prompt('Enter new name for output:',oldName||'GPIO '+pin);"
-        "if(!name||name===oldName)return;"
+        "openModal('Edit Output Name',oldName||'GPIO '+pin,async(name)=>{"
+        "const finalName=name.trim();"
+        "if(finalName===(oldName||'GPIO '+pin))return;"
         "try{await fetch('/api/name',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({pin:pin,name:name})});load();}catch(e){alert('Error: '+e);console.error(e);}}"));
+        "body:JSON.stringify({pin:pin,name:finalName})});load();}catch(e){alert('Error: '+e);console.error(e);}});}"));
         
         server->sendContent(F("async function createGroup(){try{"
         "const gid=parseInt(document.getElementById('newGroupId').value);"
@@ -1479,23 +1516,27 @@ void initializeWebServer() {
         uint8_t groupId = doc["groupId"];
         const char* newName = doc["name"];
         
+        // If name is empty or null, use default "Group X"
+        char finalName[21];
         if (newName == nullptr || strlen(newName) == 0) {
-            server->send(400, "application/json", "{\"error\":\"Name cannot be empty\"}");
-            return;
+            snprintf(finalName, sizeof(finalName), "Group %d", groupId);
+        } else {
+            strncpy(finalName, newName, 20);
+            finalName[20] = '\0';
         }
         
         // Find and update group
         bool found = false;
         for (int i = 0; i < MAX_CHASING_GROUPS; i++) {
             if (chasingGroups[i].active && chasingGroups[i].groupId == groupId) {
-                strncpy(chasingGroups[i].name, newName, 20);
+                strncpy(chasingGroups[i].name, finalName, 20);
                 chasingGroups[i].name[20] = '\0';
                 saveChasingGroups();
                 found = true;
                 Serial.print("[CHASING] Updated group ");
                 Serial.print(groupId);
                 Serial.print(" name to '");
-                Serial.print(newName);
+                Serial.print(finalName);
                 Serial.println("'");
                 break;
             }
