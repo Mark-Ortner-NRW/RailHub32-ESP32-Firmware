@@ -1,11 +1,12 @@
-# RailHub32 Flasher
+# RailHub32 Flasher v2.0
 
-Minimalistic Windows Forms application for flashing RailHub32 firmware to ESP32 devices.
+Minimalistic Windows Forms application for flashing RailHub32 v2.0 firmware to ESP32 devices. Supports the latest firmware with WebSocket support, blink intervals, and real-time updates.
 
 ## Features
 
 - **Automatic ESP32 Detection**: Scans serial ports and automatically detects connected ESP32 devices
 - **One-Click Flashing**: No manual configuration required - just click "FLASH FIRMWARE"
+- **v2.0 Firmware Support**: Compatible with RailHub32 v2.0 features (WebSocket, blink intervals)
 - **Volvo-Inspired Design**: Clean, minimalistic UI with refined aesthetics
 - **Real-time Progress**: Visual progress bar and status updates during flashing
 - **Error Handling**: Clear error messages and recovery instructions
@@ -82,4 +83,10 @@ The application follows Volvo's design language:
 
 ## License
 
-Part of the RailHub32 project.
+Part of the RailHub32 v2.0 project.
+
+---
+
+**Version**: 2.0 (compatible with RailHub32 v2.0 firmware)  
+**Platform**: Windows (.NET 8.0)  
+**Last Updated**: November 14, 2025

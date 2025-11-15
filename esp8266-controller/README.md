@@ -1,17 +1,20 @@
-# RailHub8266 ESP8266 WiFi-Controlled Railway Controller
+# RailHub8266 ESP8266 WiFi-Controlled Railway Controller v2.0
 
-ESP8266-based WiFi-controlled PWM output controller for model railways and lighting control. This is a port of the RailHub32 controller, adapted for the ESP8266 platform with 8 outputs instead of 16.
+ESP8266-based WiFi-controlled PWM output controller for model railways and lighting control. This is a port of the RailHub32 controller, adapted for the ESP8266 platform with 8 outputs, WebSocket real-time updates, chasing light groups, and blink intervals.
 
 ## Features
 
 - **8 Independent PWM Outputs**: Control 8 devices with individual on/off states and brightness (0-100%)
+- **Real-time WebSocket Updates**: Live status broadcasts every 500ms without polling
+- **Chasing Light Groups**: Create up to 4 sequential chasing effects with configurable intervals
+- **Blink Interval Control**: Set individual blink rates per output (0-65535ms)
 - **WiFi Connectivity**: Connect via existing WiFi or create access point for standalone operation
 - **Web Interface**: Responsive multilingual web control panel (6 languages)
-- **Persistent Storage**: All settings saved to EEPROM and restored on boot
+- **Persistent Storage**: All settings, intervals, and chasing groups saved to EEPROM
 - **WiFiManager Integration**: Easy WiFi configuration via captive portal
 - **mDNS Support**: Access controller via `railhub8266.local`
-- **Custom Output Names**: Assign meaningful names to each output
-- **MQTT Ready**: RESTful API for integration with home automation systems
+- **Custom Output Names**: Assign meaningful names to each output (persists across reboots)
+- **RESTful API**: Complete API for integration with home automation systems
 
 ## Hardware Requirements
 
@@ -59,11 +62,22 @@ struct EEPROMData {
     bool outputStates[8];          // On/off states for 8 outputs
     uint8_t outputBrightness[8];   // Brightness values (0-255)
     char outputNames[8][21];       // Custom names (20 chars + null)
+    uint16_t outputIntervals[8];   // Blink intervals in ms (0 = no blink)
+    // Chasing groups data
+    uint8_t chasingGroupCount;     // Number of active groups (0-4)
+    struct {
+        uint8_t groupId;           // Unique group ID (0-3)
+        bool active;               // Group enabled/disabled
+        char name[21];             // Group name (20 chars + null)
+        uint8_t outputIndices[8];  // Output indices in sequence
+        uint8_t outputCount;       // Number of outputs in group
+        uint16_t interval;         // Step interval in ms
+    } chasingGroups[4];            // Up to 4 chasing groups
     uint8_t checksum;              // Data integrity check
 };
 ```
 
-Total EEPROM usage: ~265 bytes (512 bytes allocated)
+Total EEPROM usage: ~500 bytes (512 bytes allocated)
 
 ## Building and Flashing
 
@@ -104,33 +118,88 @@ The `platformio.ini` defines three environments:
 
 The web interface provides:
 
-- **Status Tab**: Real-time system information (WiFi signal, IP, uptime, memory)
-- **Control Tab**: Individual output control with brightness sliders
+- **Status Tab**: Real-time system information (WiFi signal, IP, uptime, memory) with live WebSocket updates
+- **Control Tab**: Individual output control with brightness sliders and blink interval settings
+- **Chasing Tab**: Create and manage up to 4 sequential chasing light groups
 - **Settings Tab**: Device configuration and output naming
-- **Language Selector**: English, German, French, Italian, Spanish, Portuguese
+- **Language Selector**: English, German, French, Italian, Chinese, Hindi
+
+### Real-Time Updates
+
+- **WebSocket Connection**: Port 81 for live bidirectional communication
+- **Broadcast Interval**: 500ms automatic status updates
+- **Instant Feedback**: Output changes reflected immediately across all connected clients
+
+### Chasing Light Groups
+
+**Features:**
+- Create up to 4 independent chasing groups
+- Assign up to 8 outputs per group
+- Configurable step interval (10-65535ms)
+- Custom group names (persistent)
+- Sequential activation (output 1 → 2 → 3... → loop)
+- Independent from manual output control
+
+**Use Cases:**
+- Runway approach lights
+- Advertising signs
+- Traffic signals
+- Warning lights
+- Decorative effects
 
 ### API Endpoints
 
 ```
 GET  /              - Main web interface
-GET  /api/status    - JSON status of all outputs and system info
-POST /api/control   - Control output (output, state, brightness)
+GET  /api/status    - JSON status of all outputs, system info, and chasing groups
+POST /api/control   - Control output (pin, active, brightness)
+POST /api/interval  - Set blink interval (pin, interval in ms)
 POST /api/name      - Set custom output name (output, name)
+POST /api/chasing/create - Create chasing group (groupId, outputs[], interval, name)
+POST /api/chasing/delete - Delete chasing group (groupId)
+POST /api/chasing/name   - Rename chasing group (groupId, name)
 POST /api/reset     - Clear all saved settings (EEPROM wipe)
 ```
+
+### WebSocket Endpoint
+
+```
+ws://railhub8266.local:81/
+```
+
+- Real-time status broadcasts every 500ms
+- Automatic updates on any output/group change
+- JSON format matching `/api/status`
 
 ### Example API Usage
 
 ```bash
 # Turn on Output 1 at 75% brightness
 curl -X POST http://railhub8266.local/api/control \
-  -d "output=0&state=1&brightness=191"
+  -H "Content-Type: application/json" \
+  -d '{"pin":4,"active":true,"brightness":191}'
+
+# Set blink interval to 500ms
+curl -X POST http://railhub8266.local/api/interval \
+  -H "Content-Type: application/json" \
+  -d '{"pin":4,"interval":500}'
 
 # Set custom name for Output 1
 curl -X POST http://railhub8266.local/api/name \
-  -d "output=0&name=Platform%20Lights"
+  -H "Content-Type: application/json" \
+  -d '{"output":0,"name":"Platform Lights"}'
 
-# Get status
+# Create chasing light group
+curl -X POST http://railhub8266.local/api/chasing/create \
+  -H "Content-Type: application/json" \
+  -d '{"groupId":0,"outputs":[0,1,2,3],"interval":300,"name":"Runway Lights"}'
+
+# Delete chasing group
+curl -X POST http://railhub8266.local/api/chasing/delete \
+  -H "Content-Type: application/json" \
+  -d '{"groupId":0}'
+
+# Get status (includes chasing groups)
 curl http://railhub8266.local/api/status
 ```
 
@@ -167,9 +236,8 @@ The ESP8266's limited RAM requires careful string handling and minimal dynamic a
 All dependencies are managed via PlatformIO:
 
 - **ArduinoJson** 7.4.2 - JSON parsing and serialization
-- **ESPAsyncWebServer** - Asynchronous web server
-- **ESPAsyncTCP** - Async TCP library for ESP8266
-- **ESPAsyncWiFiManager** - WiFi configuration portal
+- **WiFiManager** 2.0.17 - WiFi configuration portal
+- **WebSockets** 2.4.1 - WebSocket server for real-time updates
 - **ESP8266WiFi** - WiFi connectivity (built-in)
 - **ESP8266mDNS** - Multicast DNS (built-in)
 - **EEPROM** - Non-volatile storage (built-in)
@@ -222,6 +290,14 @@ esp8266-controller/
 [Specify your license here]
 
 ## Version History
+
+- **2.0.0** - Major feature update
+  - Added WebSocket server for real-time updates (port 81, 500ms broadcast)
+  - Implemented chasing light groups (up to 4 groups, configurable intervals)
+  - Added blink interval control per output (0-65535ms, persistent)
+  - Enhanced EEPROM structure for new features
+  - Improved web interface with live updates
+  - Full API expansion for chasing lights and intervals
 
 - **1.0.0** - Initial ESP8266 port from RailHub32 controller
   - 8 PWM outputs adapted for ESP8266 GPIO constraints

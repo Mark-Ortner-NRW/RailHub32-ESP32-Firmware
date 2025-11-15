@@ -1,8 +1,8 @@
-# ESP32 vs ESP8266 Controller Comparison
+# ESP32 vs ESP8266 Controller Comparison v2.0
 
 ## Overview
 
-This document compares the **RailHub32** and **RailHub8266 ESP8266** railway controller implementations.
+This document compares the **RailHub32 v2.0** and **RailHub8266 v2.0** railway controller implementations. Both versions now include advanced features like WebSocket real-time updates, blink intervals, with the ESP8266 adding unique chasing light group functionality.
 
 ## Hardware Comparison
 
@@ -149,13 +149,16 @@ struct EEPROMData {
 | WiFi AP Mode | ✅ | ✅ | Identical |
 | WiFi STA Mode | ✅ | ✅ | Identical |
 | WiFiManager | ✅ | ✅ | Same library |
-| Web Server | ✅ | ✅ | ESPAsyncWebServer |
+| Web Server | ✅ | ✅ | Async (ESP32) vs Standard (ESP8266) |
+| **WebSocket Server** | ✅ | ✅ | **Port 81, 500ms broadcasts** |
+| **Blink Intervals** | ✅ | ✅ | **0-65535ms, NVRAM persistent** |
+| **Chasing Light Groups** | ❌ | ✅ | **ESP8266 exclusive (up to 4 groups)** |
 | mDNS | ✅ | ✅ | Different implementations |
 | PWM Control | ✅ | ✅ | Different APIs |
 | NVRAM Storage | ✅ | ✅ | Preferences vs EEPROM |
 | Custom Names | ✅ | ✅ | 31 chars vs 20 chars |
 | Language Support | ✅ | ✅ | All 6 languages |
-| API Endpoints | ✅ | ✅ | Identical |
+| API Endpoints | ✅ | ✅ | ESP8266 has chasing API |
 | OTA Updates | ❌ | ❌ | Not implemented yet |
 | Bluetooth | ✅ | ❌ | ESP32 only |
 | Dual Core | ✅ | ❌ | ESP32 only |
@@ -171,14 +174,33 @@ struct EEPROMData {
 
 ## API Compatibility
 
-All API endpoints are **identical**:
+### Shared Endpoints
+
+These endpoints work identically on both platforms:
 
 ```bash
 GET  /              # Web interface
-GET  /api/status    # System status JSON
-POST /api/control   # Control outputs
+GET  /api/status    # System status JSON (includes intervals)
+POST /api/control   # Control outputs (pin, active, brightness)
+POST /api/interval  # Set blink interval (pin, interval)
 POST /api/name      # Set output names
 POST /api/reset     # Reset settings
+```
+
+### WebSocket Endpoint (Both Platforms)
+
+```bash
+ws://[hostname-or-ip]:81/   # Real-time status updates (500ms)
+```
+
+### ESP8266-Exclusive Endpoints
+
+Chasing light group management (not available on ESP32):
+
+```bash
+POST /api/chasing/create   # Create chasing group
+POST /api/chasing/delete   # Delete chasing group  
+POST /api/chasing/name     # Rename chasing group
 ```
 
 ## Recommendations
@@ -217,11 +239,14 @@ POST /api/reset     # Reset settings
 
 | Metric | ESP32 | ESP8266 | Change |
 |--------|-------|---------|--------|
-| **Total Lines** | 1,868 | 1,833 | -35 |
+| **Total Lines** | 2,301 | 1,769 | ESP32 +532 |
 | **Includes** | ESP32-specific | ESP8266-specific | Modified |
-| **Functions** | ~45 | ~45 | Same count |
-| **HTML Size** | ~90 KB | ~90 KB | Identical |
-| **Dependencies** | 5 libraries | 5 libraries | Same |
+| **Functions** | ~50 | ~55 | ESP8266 has chasing functions |
+| **HTML Size** | ~95 KB | ~98 KB | ESP8266 has chasing UI |
+| **Dependencies** | 6 libraries | 4 libraries | Different web servers |
+| **WebSocket** | Port 81 | Port 81 | Both supported |
+| **Blink Control** | Yes | Yes | Both platforms |
+| **Chasing Groups** | No | Yes (up to 4) | ESP8266 only |
 
 ## Build Configuration
 
@@ -270,27 +295,47 @@ board = esp12e
 
 ## Future Enhancements
 
-Applicable to both platforms:
+### Completed in v2.0:
+- [x] WebSocket real-time updates (both platforms)
+- [x] Blink interval control (both platforms)
+- [x] Chasing light groups (ESP8266)
+
+### Applicable to both platforms:
 - [ ] OTA firmware updates
 - [ ] MQTT support for home automation
 - [ ] Web interface authentication
 - [ ] Scheduler/timers for automated control
 - [ ] Scene presets (save/restore multiple output states)
 - [ ] Data logging to SD card
-- [ ] RESTful API documentation
+- [ ] RESTful API authentication
 
-ESP32-specific potential:
+### ESP32-specific potential:
 - [ ] Bluetooth LE control
 - [ ] Touch sensor support
 - [ ] Camera integration (ESP32-CAM)
+- [ ] Port chasing light groups from ESP8266
 
 ## Conclusion
 
-Both implementations provide **functionally equivalent** railway control capabilities. The choice between platforms depends on:
+Both v2.0 implementations provide **functionally rich** railway control capabilities with real-time WebSocket updates and configurable blink intervals. The choice between platforms depends on:
 
 - **Output requirements**: 8 vs 16 channels
 - **Budget**: ESP8266 is cheaper
 - **Memory needs**: ESP32 has more headroom
-- **Future expansion**: ESP32 offers more options
+- **Chasing effects**: ESP8266 offers unique sequential chasing light groups
+- **Future expansion**: ESP32 offers more options (Bluetooth, dual-core)
 
-The ESP8266 version is a **production-ready** alternative to the ESP32 version, suitable for applications requiring 8 or fewer outputs.
+The ESP8266 version is a **production-ready** alternative to the ESP32 version, with the added benefit of chasing light group functionality for creating sequential effects (runway lights, advertising signs, etc.).
+
+### Version 2.0 Highlights:
+
+**Both Platforms:**
+- ✅ WebSocket server (port 81) for real-time updates
+- ✅ Blink interval control (0-65535ms per output)
+- ✅ Enhanced web interface with live updates
+- ✅ Persistent storage for all settings
+
+**ESP8266 Exclusive:**
+- ✅ Chasing light groups (up to 4 groups)
+- ✅ Sequential output control with configurable intervals
+- ✅ Custom group names and management API

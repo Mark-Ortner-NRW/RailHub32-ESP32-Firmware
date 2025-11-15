@@ -3,9 +3,9 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)
 ![ESP32](https://img.shields.io/badge/ESP32-Compatible-green.svg)
-![Version](https://img.shields.io/badge/version-1.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-2.0-brightgreen.svg)
 
-Advanced firmware for ESP32-based model railway control system with WiFi configuration portal, mDNS hostname support, persistent storage, and multi-language web interface.
+Advanced firmware for ESP32-based model railway control system with WiFi configuration portal, mDNS hostname support, persistent storage, real-time WebSocket updates, blink intervals, and multi-language web interface.
 
 ## 📖 Table of Contents
 
@@ -30,26 +30,32 @@ Advanced firmware for ESP32-based model railway control system with WiFi configu
 - **mDNS Hostname Support** - Access your device by friendly hostname (e.g., `http://railhub32.local`)
 - **Station Mode** - Connect to existing WiFi networks
 - **Web-Based Interface** - Modern, responsive control panel accessible from any browser
-- **Persistent Storage** - Output states, brightness levels, and custom names saved to NVRAM
+- **Real-time WebSocket Updates** - Live status updates without polling (500ms broadcast interval)
+- **Blink Interval Control** - Configure individual outputs to blink at custom intervals (10-65535ms)
+- **Persistent Storage** - Output states, brightness levels, intervals, and custom names saved to NVRAM
 - **Real-time Control** - Instant response to commands via web interface
 - **Custom Output Names** - Editable, persistent names for each output
 
 ### Web Interface Features
+- **Real-time WebSocket Updates** - Live status updates pushed to browser (no page refresh needed)
 - **Master Brightness Control** - Adjust all outputs simultaneously
 - **Individual Output Control** - Fine-tune each output independently
+- **Blink Interval Configuration** - Set custom blink intervals per output (0 = solid, >0 = blinking)
 - **Editable Output Names** - Click any output name to customize it (persists across reboots)
 - **Multi-Language Support** - Available in English, German, French, Italian, Chinese, and Hindi
 - **Persistent Preferences** - Language and tab selection saved in browser
-- **Status Monitoring** - Real-time display of system information
+- **Status Monitoring** - Real-time display of system information with live updates
 - **Dark Theme** - Professional, easy-on-the-eyes interface design
 - **Responsive Design** - Works on desktop, tablet, and mobile devices
 
 ### Technical Highlights
 - **Asynchronous Web Server** - Non-blocking operation for smooth performance
+- **WebSocket Server** - Real-time bidirectional communication on port 81
 - **WiFiManager Integration** - ESPAsyncWiFiManager for easy configuration
 - **mDNS Service** - Automatic hostname resolution (.local domains)
 - **JSON RESTful API** - Clean endpoints for programmatic control
 - **PWM Control** - 8-bit brightness resolution (0-255) at 5kHz
+- **Blink Control** - Non-blocking interval-based blinking (10-65535ms per output)
 - **Low Memory Footprint** - Efficient resource usage (~15% RAM, ~69% Flash)
 - **Optimized Logging** - Debug output suppressed for production performance
 - **Comprehensive Unit Tests** - 33 automated tests covering GPIO, JSON, configuration, and utilities
@@ -657,13 +663,15 @@ GET /api/status
       "pin": 2,
       "active": true,
       "brightness": 75,
+      "interval": 0,
       "name": "Station Light"
     },
     {
       "pin": 4,
       "active": false,
       "brightness": 0,
-      "name": ""
+      "interval": 500,
+      "name": "Blinking Signal"
     }
   ]
 }
@@ -730,6 +738,31 @@ Content-Type: application/json
 
 Updates the custom name for the specified output. Name is stored in NVRAM and persists across reboots.
 
+#### Set Blink Interval
+```http
+POST /api/interval
+Content-Type: application/json
+
+{
+  "pin": 2,
+  "interval": 500
+}
+```
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+**Parameters:**
+- `pin` (int): GPIO pin number
+- `interval` (unsigned int): Blink interval in milliseconds (0 = solid/no blink, 10-65535 = blink rate)
+
+**Description:**
+Configures the blink interval for a specific output. When set to 0, the output remains solid (no blinking). When set to a value greater than 0, the output will toggle on/off at the specified interval. The interval is stored in NVRAM and persists across reboots.
+
 #### Reset Saved States
 ```http
 POST /api/reset
@@ -743,6 +776,38 @@ POST /api/reset
 ```
 
 Clears all saved output states from persistent storage (NVRAM).
+
+### WebSocket Real-Time Updates
+
+The controller provides real-time status updates via WebSocket on port 81:
+
+**WebSocket Endpoint:**
+```
+ws://railhub32.local:81/
+ws://192.168.1.100:81/
+```
+
+**Features:**
+- Automatic connection from web interface
+- Broadcasts status every 500ms
+- Push updates for all output changes
+- Automatic reconnection on disconnect
+- JSON format matching `/api/status`
+
+**Usage Example (JavaScript):**
+```javascript
+const ws = new WebSocket('ws://railhub32.local:81');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Status update:', data);
+  // Update UI with latest output states
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+```
 
 ### Configuration Portal
 
@@ -858,6 +923,7 @@ graph TB
     ESPAsyncWebServer @ 3.6.0     # Asynchronous web server
     AsyncTCP @ 3.3.2              # Asynchronous TCP library
     ESPAsyncWiFiManager @ 0.31.0  # WiFi configuration manager
+    WebSockets @ 2.4.1            # WebSocket server for real-time updates
     ESPmDNS @ 2.0.0               # mDNS hostname support
     Preferences @ 2.0.0           # NVRAM persistent storage
     WiFi @ 2.0.0                  # WiFi management
@@ -1359,12 +1425,14 @@ timeline
 
 - [x] WiFi Configuration Portal with captive portal
 - [x] 16 PWM output channels with brightness control
+- [x] WebSocket server for real-time status updates (500ms broadcast)
+- [x] Blink interval control per output (0-65535ms, persistent)
 - [x] Custom editable output names (persistent)
 - [x] Multi-language support (6 languages)
 - [x] mDNS hostname support (.local domains)
 - [x] Performance optimization (debug output suppressed)
 - [x] RESTful JSON API
-- [x] Responsive web interface
+- [x] Responsive web interface with live updates
 - [x] NVRAM persistent storage
 - [x] Asynchronous web server
 - [x] Real-time status monitoring

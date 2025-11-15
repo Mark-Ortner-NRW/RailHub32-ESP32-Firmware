@@ -1,7 +1,7 @@
-# Blink Interval Feature
+# Blink Interval Feature (v2.0)
 
 ## Overview
-Added the ability to set a blink interval for each output, allowing signal lights or other outputs to blink at configurable intervals.
+The blink interval feature allows each output to blink at configurable intervals, enabling signal lights, warning indicators, or decorative effects to operate automatically without external control. This feature is available on both ESP32 (RailHub32) and ESP8266 (RailHub8266) platforms.
 
 ## Features Added
 
@@ -10,10 +10,18 @@ Added the ability to set a blink interval for each output, allowing signal light
 - `lastBlinkTime[MAX_OUTPUTS]` - Tracks last toggle time for each output
 - `blinkState[MAX_OUTPUTS]` - Current internal blink state (on/off)
 
-### 2. **EEPROM Persistence**
-- Updated `EEPROMData` structure to include `outputIntervals[8]`
+### 2. **Persistent Storage**
+
+**ESP8266 (EEPROM):**
+- Updated `EEPROMData` structure to include `outputIntervals[8]` (uint16_t array)
 - Intervals are automatically saved and restored on power cycle
 - Works seamlessly with existing save/load functionality
+- 16 bytes additional EEPROM usage
+
+**ESP32 (Preferences/NVRAM):**
+- Individual keys for each output interval: `outInterval0` through `outInterval15`
+- Automatic persistence on interval changes
+- Integrated with existing Preferences namespace
 
 ### 3. **Blinking Logic**
 - `updateBlinkingOutputs()` - Called in main loop to handle all blinking
@@ -43,10 +51,18 @@ Set the blink interval for an output.
 
 **Parameters:**
 - `pin` (int) - GPIO pin number
-- `interval` (unsigned int) - Blink interval in milliseconds (0 = disable blinking)
+- `interval` (unsigned int) - Blink interval in milliseconds
+  - `0` = Disable blinking (solid output)
+  - `10-65535` = Blink interval in ms (recommended minimum: 100ms)
+
+**Behavior:**
+- Interval is saved to EEPROM/NVRAM automatically
+- Persists across reboots
+- Independent of output brightness setting
+- Works alongside manual on/off control
 
 #### **GET /api/status** (Updated)
-Now includes interval information for each output.
+Now includes interval information for each output, plus WebSocket support.
 
 **Response:**
 ```json
@@ -58,16 +74,34 @@ Now includes interval information for each output.
       "brightness": 100,
       "name": "Signal Light",
       "interval": 500
+    },
+    {
+      "pin": 5,
+      "active": false,
+      "brightness": 0,
+      "name": "Platform Light",
+      "interval": 0
     }
   ]
 }
 ```
 
+**Note**: Status updates are also broadcast via WebSocket every 500ms on port 81.
+
 ### 5. **Web Interface**
-- Added interval input field for each output
-- Visual indicator: outputs with blinking enabled show orange border
-- Real-time interval adjustment (0-10000ms range)
-- Status display shows "Blink" or "Solid" based on interval value
+- Added interval input field for each output (0-65535ms range)
+- Visual indicator: outputs with blinking enabled show **orange border**
+- Real-time interval adjustment via slider or input box
+- Status display shows "Blinking" or "Solid" based on interval value
+- Persistent across page reloads (saved to EEPROM/NVRAM)
+- Live updates via WebSocket when interval changes
+- Intervals display in milliseconds with validation
+
+**UI Elements:**
+- Interval input: Number field with min=0, max=65535
+- Visual feedback: Border color changes when blinking is active
+- Integration with brightness controls
+- Tooltips for guidance
 
 ## Usage Examples
 
@@ -94,13 +128,17 @@ Set interval to 0 -> Light stays solid (no blinking)
 - Maximum interval: 65535ms (stored as uint16_t in EEPROM)
 
 ### Memory Usage
-- Additional RAM: ~42 bytes (3 arrays × 7 outputs × 2 bytes)
-- Additional EEPROM: 16 bytes (8 outputs × 2 bytes each)
+- **Additional RAM**: 
+  - ESP32: ~48 bytes (3 arrays × 16 outputs × 1 byte average)
+  - ESP8266: ~42 bytes (3 arrays × 8 outputs × 1.75 bytes average)
+- **Additional EEPROM (ESP8266)**: 16 bytes (8 outputs × 2 bytes each)
+- **Additional NVRAM (ESP32)**: ~32 bytes (16 key-value pairs)
 
 ### Performance
 - Blinking update overhead: ~2-3µs per output per loop iteration
 - No impact on web server responsiveness
 - All outputs blink independently
+- Non-blocking operation allows WebSocket and web server to run smoothly
 
 ## Web Interface Controls
 
