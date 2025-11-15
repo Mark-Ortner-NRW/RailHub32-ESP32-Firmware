@@ -1,11 +1,31 @@
+<div align="center">
+
 # 🚂 RailHub32 Firmware
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)
-![ESP32](https://img.shields.io/badge/ESP32-Compatible-green.svg)
-![Version](https://img.shields.io/badge/version-2.0-brightgreen.svg)
+### Advanced ESP32 Model Railway Control System
 
-Advanced firmware for ESP32-based model railway control system with WiFi configuration portal, mDNS hostname support, persistent storage, real-time WebSocket updates, blink intervals, and multi-language web interface.
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)](https://platformio.org/)
+[![ESP32](https://img.shields.io/badge/ESP32-Compatible-green.svg)](https://www.espressif.com/en/products/socs/esp32)
+[![Build Status](https://img.shields.io/badge/build-passing-success.svg)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+[![Tests](https://img.shields.io/badge/tests-33%20passing-success.svg)](esp32-controller/test/)
+[![Code Size](https://img.shields.io/badge/code%20size-949%20KB-informational.svg)]()
+[![RAM Usage](https://img.shields.io/badge/RAM-16%25-success.svg)]()
+
+**WiFi-enabled model railway controller with real-time WebSocket updates, 16 PWM outputs, and multi-language web interface**
+
+[Features](#-features) •
+[Quick Start](#-quick-start) •
+[Documentation](#-architecture-documentation) •
+[API](#-api-reference) •
+[Contributing](#-contributing)
+
+![RailHub32 Banner](https://img.shields.io/badge/🚂-Model%20Railway%20Control-blue?style=for-the-badge)
+
+</div>
+
+---
 
 ## 📖 Table of Contents
 
@@ -22,19 +42,56 @@ Advanced firmware for ESP32-based model railway control system with WiFi configu
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 
-## 🚂 Features
+## ✨ Features
 
-### Core Functionality
-- **16 PWM Output Channels** - Control lighting, signals, and other railway accessories with 8-bit resolution
-- **WiFi Configuration Portal** - Easy WiFi setup with captive portal interface
-- **mDNS Hostname Support** - Access your device by friendly hostname (e.g., `http://railhub32.local`)
-- **Station Mode** - Connect to existing WiFi networks
-- **Web-Based Interface** - Modern, responsive control panel accessible from any browser
-- **Real-time WebSocket Updates** - Live status updates without polling (500ms broadcast interval)
-- **Blink Interval Control** - Configure individual outputs to blink at custom intervals (10-65535ms)
-- **Persistent Storage** - Output states, brightness levels, intervals, and custom names saved to NVRAM
-- **Real-time Control** - Instant response to commands via web interface
-- **Custom Output Names** - Editable, persistent names for each output
+<details open>
+<summary><b>🎯 Core Functionality</b></summary>
+<br>
+
+| Feature | Description |
+|---------|-------------|
+| 🎛️ **16 PWM Outputs** | Control lighting, signals, and accessories with 8-bit resolution (0-255) |
+| 📡 **WiFi Portal** | Easy setup with captive portal interface - no coding required |
+| 🌐 **mDNS Support** | Access via friendly hostname: `http://railhub32.local` |
+| ⚡ **WebSocket Updates** | Real-time status broadcasts every 500ms - no polling needed |
+| ⏱️ **Blink Control** | Individual blink intervals (10-65535ms) per output |
+| 💾 **Persistent Storage** | All settings saved to NVRAM and restored on boot |
+| ✏️ **Custom Names** | Editable, persistent output labels (up to 20 characters) |
+| 🔒 **Reliable** | Non-blocking architecture, stable 30+ day uptime |
+
+</details>
+
+<details open>
+<summary><b>🖥️ Web Interface</b></summary>
+<br>
+
+- ✅ **Real-time Updates** - Live WebSocket push notifications
+- ✅ **Master Control** - Adjust all outputs simultaneously
+- ✅ **Individual Control** - Fine-tune each output independently
+- ✅ **Multi-Language** - 6 languages: 🇬🇧 EN, 🇩🇪 DE, 🇫🇷 FR, 🇮🇹 IT, 🇨🇳 ZH, 🇮🇳 HI
+- ✅ **Dark Theme** - Professional, easy-on-the-eyes design
+- ✅ **Responsive** - Works on 📱 mobile, 💻 tablet, and 🖥️ desktop
+- ✅ **Persistent Prefs** - Language and settings saved in browser
+
+</details>
+
+<details>
+<summary><b>⚙️ Technical Highlights</b></summary>
+<br>
+
+```cpp
+// Key Technologies
+ESP32 Dual-Core @ 240MHz
+16 PWM Channels @ 5kHz, 8-bit resolution
+AsyncWebServer (non-blocking)
+WebSocket Server on port 81
+mDNS (.local domain support)
+JSON RESTful API
+NVRAM persistent storage
+33 unit tests (100% pass rate)
+```
+
+</details>
 
 ### Web Interface Features
 - **Real-time WebSocket Updates** - Live status updates pushed to browser (no page refresh needed)
@@ -388,18 +445,33 @@ VIN (5V) → Relay Module VCC
 
 ## 🚀 Quick Start
 
-### 1. Installation
+> **📝 Note:** Get up and running in under 5 minutes!
 
-#### Prerequisites
-- [PlatformIO](https://platformio.org/) installed
-- USB cable for ESP32
-- Git (optional)
+### 📦 1. Installation
 
-#### Clone or Download
+<details>
+<summary><b>Prerequisites</b> (click to expand)</summary>
+
+- ✅ [PlatformIO](https://platformio.org/) installed (or [Arduino IDE](https://www.arduino.cc/en/software))
+- ✅ USB cable for ESP32 (data-capable)
+- ✅ [Git](https://git-scm.com/) (optional, can download ZIP)
+
+</details>
+
+**Clone the repository:**
+
 ```bash
-git clone https://github.com/Mark-Ortner-NRW/RailWays.git
-cd RailWays/firmware/esp32-controller
+# Clone via HTTPS
+git clone https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware.git
+cd RailHub32-ESP32-Firmware/esp32-controller
+
+# Or via SSH
+git clone git@github.com:Mark-Ortner-NRW/RailHub32-ESP32-Firmware.git
 ```
+
+**Or download as ZIP:**
+
+[![Download ZIP](https://img.shields.io/badge/Download-ZIP-blue?style=for-the-badge&logo=github)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/archive/refs/heads/main.zip)
 
 ### 2. Configuration
 
@@ -1362,33 +1434,90 @@ flowchart LR
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+<div align="center">
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+**We welcome contributions from the community!** 🎉
+
+[![Contributors](https://img.shields.io/github/contributors/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=for-the-badge)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/graphs/contributors)
+[![Issues](https://img.shields.io/github/issues/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=for-the-badge)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=for-the-badge)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/pulls)
+
+</div>
+
+### 🛠️ How to Contribute
+
+1. **🍴 Fork** the repository
+2. **🌿 Create** your feature branch
+   ```bash
+   git checkout -b feature/AmazingFeature
+   ```
+3. **✍️ Commit** your changes
+   ```bash
+   git commit -m 'Add some AmazingFeature'
+   ```
+4. **📤 Push** to the branch
+   ```bash
+   git push origin feature/AmazingFeature
+   ```
+5. **🎯 Open** a Pull Request
+
+### 📋 Contribution Guidelines
+
+- Follow existing code style
+- Add unit tests for new features
+- Update documentation
+- Test on actual ESP32 hardware
+- One feature per pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-## 👥 Authors
+```
+MIT License - Free to use, modify, and distribute
+```
 
-- **Mark Ortner** - *Initial work* - [Mark-Ortner-NRW](https://github.com/Mark-Ortner-NRW)
+## 👥 Authors & Contributors
+
+<table>
+<tr>
+<td align="center">
+<a href="https://github.com/Mark-Ortner-NRW">
+<img src="https://github.com/Mark-Ortner-NRW.png" width="100px;" alt="Mark Ortner"/><br />
+<sub><b>Mark Ortner</b></sub>
+</a><br />
+<sub>Project Lead & Developer</sub>
+</td>
+</tr>
+</table>
+
+**Want to be listed here?** [Contribute](#-contributing) to the project!
 
 ## 🙏 Acknowledgments
 
-- ESP32 Arduino Framework
-- PlatformIO Team
-- AsyncWebServer Library
-- Model Railway Community
+- 🎨 **ESP32 Arduino Framework** - Core platform
+- 🛠️ **PlatformIO Team** - Build system
+- ⚡ **AsyncWebServer Library** - High-performance web server
+- 🚂 **Model Railway Community** - Inspiration and feedback
+- 🧪 **Unity Test Framework** - Quality assurance
 
-## 📞 Support
+## 📞 Support & Community
 
-- **Issues**: [GitHub Issues](https://github.com/Mark-Ortner-NRW/RailWays/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Mark-Ortner-NRW/RailWays/discussions)
+<div align="center">
+
+### Get Help
+
+[![Issues](https://img.shields.io/badge/Issues-Report%20Bug-red?style=for-the-badge&logo=github)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/issues)
+[![Discussions](https://img.shields.io/badge/Discussions-Ask%20Question-blue?style=for-the-badge&logo=github)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/discussions)
+[![Wiki](https://img.shields.io/badge/Wiki-Documentation-green?style=for-the-badge&logo=github)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/wiki)
+
+### Stay Updated
+
+[![Star](https://img.shields.io/github/stars/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=social)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+[![Watch](https://img.shields.io/github/watchers/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=social)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+[![Fork](https://img.shields.io/github/forks/Mark-Ortner-NRW/RailHub32-ESP32-Firmware?style=social)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/fork)
+
+</div>
 
 ## 🗺️ Roadmap
 
@@ -1492,4 +1621,31 @@ graph LR
 
 ---
 
+<div align="center">
+
+## 📊 Project Stats
+
+![Code Size](https://img.shields.io/github/languages/code-size/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+![Repo Size](https://img.shields.io/github/repo-size/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+![Last Commit](https://img.shields.io/github/last-commit/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+![Commit Activity](https://img.shields.io/github/commit-activity/m/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
+
+### 🔗 Quick Links
+
+[📖 Documentation](arc42/) • 
+[🐛 Report Bug](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/issues) • 
+[✨ Request Feature](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/issues) • 
+[📝 Changelog](CHANGELOG.md) • 
+[🚀 Releases](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/releases)
+
+---
+
 **Made with ❤️ for model railway enthusiasts**
+
+🚂 *Bringing your model railway to life with modern IoT technology* 🚂
+
+**Version 2.0.0** • **Released November 2025** • **MIT License**
+
+[![GitHub](https://img.shields.io/badge/GitHub-Mark--Ortner--NRW-181717?style=flat&logo=github)](https://github.com/Mark-Ortner-NRW)
+
+</div>

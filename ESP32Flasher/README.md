@@ -1,22 +1,76 @@
-# RailHub32 Flasher v2.0
+<div align="center">
 
-Minimalistic Windows Forms application for flashing RailHub32 v2.0 firmware to ESP32 devices. Supports the latest firmware with WebSocket support, blink intervals, and real-time updates.
+# ⚡ RailHub32 Flasher
 
-## Features
+### Windows Firmware Flashing Tool for ESP32
 
-- **Automatic ESP32 Detection**: Scans serial ports and automatically detects connected ESP32 devices
-- **One-Click Flashing**: No manual configuration required - just click "FLASH FIRMWARE"
-- **v2.0 Firmware Support**: Compatible with RailHub32 v2.0 features (WebSocket, blink intervals)
-- **Volvo-Inspired Design**: Clean, minimalistic UI with refined aesthetics
-- **Real-time Progress**: Visual progress bar and status updates during flashing
-- **Error Handling**: Clear error messages and recovery instructions
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
-## Requirements
+**One-click ESP32 firmware flashing with Volvo-inspired minimalist design**
 
-- .NET 8.0 Runtime or SDK
-- Python 3.x (for esptool.py)
-- PlatformIO (must be installed for esptool.py)
-- Built firmware files in `../esp32-controller/.pio/build/esp32dev/`
+[Features](#-features) •
+[Quick Start](#-running) •
+[Usage](#-usage) •
+[Troubleshooting](#-troubleshooting)
+
+![Flasher Banner](https://img.shields.io/badge/⚡-ESP32%20Flasher-gold?style=for-the-badge)
+
+</div>
+
+---
+
+## 📋 Overview
+
+Minimalistic **Windows Forms application** for flashing RailHub32 v2.0 firmware to ESP32 devices. Supports the latest firmware with WebSocket support, blink intervals, and real-time updates.
+
+> **🎨 Volvo Design Language** - Clean, refined, and user-friendly interface
+
+## ✨ Features
+
+<div align="center">
+
+| Feature | Description |
+|---------|-------------|
+| 🔍 **Auto-Detection** | Scans serial ports and detects ESP32 automatically |
+| 👆 **One-Click Flash** | No manual configuration - just click "FLASH FIRMWARE" |
+| 🆕 **v2.0 Support** | Compatible with WebSocket, blink intervals, real-time updates |
+| 🎨 **Volvo Design** | Clean, minimalistic UI with refined aesthetics |
+| 📊 **Real-time Progress** | Visual progress bar and status updates |
+| ⚠️ **Error Handling** | Clear error messages and recovery instructions |
+
+</div>
+
+## 💻 Requirements
+
+<table>
+<tr>
+<td>
+
+### Software Dependencies
+
+- ✅ **.NET 8.0** Runtime or SDK
+- ✅ **Python 3.x** (for esptool.py)
+- ✅ **PlatformIO** (for esptool.py)
+
+</td>
+<td>
+
+### Hardware Requirements
+
+- ✅ **Windows PC** (Windows 10+)
+- ✅ **ESP32 Board** (any variant)
+- ✅ **USB Cable** (data-capable)
+
+</td>
+</tr>
+</table>
+
+### Firmware Files
+
+📁 Built firmware must exist in: `../esp32-controller/.pio/build/esp32dev/`
 
 ## Building
 
@@ -39,54 +93,186 @@ dotnet publish -c Release -r win-x64 --self-contained
 
 The executable will be in `bin/Release/net8.0-windows/win-x64/publish/`
 
-## Usage
+## 🚀 Usage
 
-1. **Connect ESP32**: Connect your ESP32 board via USB
-2. **Launch Application**: The app will automatically detect the ESP32
-3. **Flash Firmware**: Click "FLASH FIRMWARE" button
-4. **Wait**: Progress will be shown in real-time
-5. **Done**: ESP32 will automatically reboot with new firmware
+### Step-by-Step Guide
 
-## Design Philosophy
+<table>
+<tr>
+<td align="center" width="20%">
 
-The application follows Volvo's design language:
+**1️⃣**
 
-- **Minimalism**: Clean interface with only essential elements
-- **Refinement**: Sophisticated color palette (blacks, grays, gold accents)
-- **Clarity**: Clear typography and status messaging
-- **Functionality**: User-friendly with minimal interaction required
+🔌
 
-## Color Palette
+**Connect ESP32**
 
-- **Volvo Black**: `#141414` - Primary background
-- **Volvo Gold**: `#CCA666` - Accent color for status and progress
-- **Light Gray**: `#F0F0F0` - Primary text
-- **Medium Gray**: `#646464` - Secondary text
-- **Dark Gray**: `#2D2D2D` - UI elements
+Connect your ESP32 board via USB
 
-## Troubleshooting
+</td>
+<td align="center" width="20%">
 
-**No ESP32 detected:**
-- Ensure USB cable is connected
-- Check that drivers are installed
-- Try a different USB port
-- Restart the application
+**2️⃣**
 
-**Flashing failed:**
-- Ensure firmware is built (`pio run` in esp32-controller folder)
-- Check that no serial monitor is open
-- Verify Python and PlatformIO are installed
+🚀
 
-**esptool.py not found:**
-- Install PlatformIO: `pip install platformio`
-- Or specify custom esptool path in code
+**Launch App**
 
-## License
+App auto-detects ESP32
 
-Part of the RailHub32 v2.0 project.
+</td>
+<td align="center" width="20%">
+
+**3️⃣**
+
+⚡
+
+**Flash Firmware**
+
+Click "FLASH FIRMWARE" button
+
+</td>
+<td align="center" width="20%">
+
+**4️⃣**
+
+⏳
+
+**Wait**
+
+Real-time progress shown
+
+</td>
+<td align="center" width="20%">
+
+**5️⃣**
+
+✅
+
+**Done**
+
+ESP32 auto-reboots
+
+</td>
+</tr>
+</table>
+
+## 🎨 Design Philosophy
+
+<div align="center">
+
+**Following Volvo's Design Language**
+
+[![Design](https://img.shields.io/badge/Design-Volvo%20Inspired-gold?style=for-the-badge)](https://www.volvocars.com/)
+
+</div>
+
+<table>
+<tr>
+<td align="center">
+
+### ✨ Minimalism
+
+Clean interface with only essential elements
+
+</td>
+<td align="center">
+
+### 🌟 Refinement
+
+Sophisticated color palette
+
+</td>
+<td align="center">
+
+### 💡 Clarity
+
+Clear typography and status messaging
+
+</td>
+<td align="center">
+
+### 👍 Functionality
+
+User-friendly with minimal interaction
+
+</td>
+</tr>
+</table>
+
+### 🎨 Color Palette
+
+```css
+/* Volvo-Inspired Colors */
+--volvo-black:   #141414  /* Primary background */
+--volvo-gold:    #CCA666  /* Accent color */
+--light-gray:    #F0F0F0  /* Primary text */
+--medium-gray:   #646464  /* Secondary text */
+--dark-gray:     #2D2D2D  /* UI elements */
+```
+
+## 🔧 Troubleshooting
+
+<details>
+<summary><b>❌ No ESP32 detected</b></summary>
+<br>
+
+**Symptoms:** Application shows "No ESP32 detected"
+
+**Solutions:**
+- ✅ Ensure USB cable is connected properly
+- ✅ Check that drivers are installed (CP210x or CH340)
+- ✅ Try a different USB port
+- ✅ Restart the application
+- ✅ Check Device Manager for COM ports
+
+</details>
+
+<details>
+<summary><b>⚠️ Flashing failed</b></summary>
+<br>
+
+**Symptoms:** Flash process fails or times out
+
+**Solutions:**
+- ✅ Ensure firmware is built: `pio run` in esp32-controller folder
+- ✅ Check that no serial monitor is open (Arduino IDE, PlatformIO, etc.)
+- ✅ Verify Python and PlatformIO are installed
+- ✅ Try holding BOOT button on ESP32 during flash
+- ✅ Check USB cable quality (use data-capable cable)
+
+</details>
+
+<details>
+<summary><b>🐍 esptool.py not found</b></summary>
+<br>
+
+**Symptoms:** Error message about missing esptool.py
+
+**Solutions:**
+- ✅ Install PlatformIO: `pip install platformio`
+- ✅ Or install esptool directly: `pip install esptool`
+- ✅ Ensure Python is in system PATH
+- ✅ Restart terminal/application after install
+
+</details>
 
 ---
 
-**Version**: 2.0 (compatible with RailHub32 v2.0 firmware)  
-**Platform**: Windows (.NET 8.0)  
-**Last Updated**: November 14, 2025
+<div align="center">
+
+## 🔗 Additional Resources
+
+[📖 Main README](../README.md) •
+[🐛 Report Issue](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/issues) •
+[📝 Changelog](../CHANGELOG.md)
+
+---
+
+**Version 2.0.0** • **Windows Platform** • **.NET 8.0**
+
+**Last Updated:** November 15, 2025
+
+Made with ❤️ for the RailHub32 project
+
+</div>

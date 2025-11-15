@@ -1,46 +1,140 @@
-# RailHub8266 ESP8266 WiFi-Controlled Railway Controller v2.0
+<div align="center">
 
-ESP8266-based WiFi-controlled PWM output controller for model railways and lighting control. This is a port of the RailHub32 controller, adapted for the ESP8266 platform with 8 outputs, WebSocket real-time updates, chasing light groups, and blink intervals.
+# 🚂 RailHub8266 Firmware
 
-## Features
+### ESP8266 Model Railway Control with Chasing Lights
 
-- **8 Independent PWM Outputs**: Control 8 devices with individual on/off states and brightness (0-100%)
-- **Real-time WebSocket Updates**: Live status broadcasts every 500ms without polling
-- **Chasing Light Groups**: Create up to 4 sequential chasing effects with configurable intervals
-- **Blink Interval Control**: Set individual blink rates per output (0-65535ms)
-- **WiFi Connectivity**: Connect via existing WiFi or create access point for standalone operation
-- **Web Interface**: Responsive multilingual web control panel (6 languages)
-- **Persistent Storage**: All settings, intervals, and chasing groups saved to EEPROM
-- **WiFiManager Integration**: Easy WiFi configuration via captive portal
-- **mDNS Support**: Access controller via `railhub8266.local`
-- **Custom Output Names**: Assign meaningful names to each output (persists across reboots)
-- **RESTful API**: Complete API for integration with home automation systems
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware/releases)
+[![Platform](https://img.shields.io/badge/ESP8266-Compatible-blue.svg)](https://www.espressif.com/en/products/socs/esp8266)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)](https://platformio.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-success.svg)](https://github.com/Mark-Ortner-NRW/RailHub32-ESP32-Firmware)
 
-## Hardware Requirements
+**8 PWM outputs • WebSocket updates • Chasing light groups • WiFi portal**
 
-- ESP8266 board (ESP-12E, NodeMCU, Wemos D1 Mini, etc.)
-- 8 PWM-capable output devices (LEDs, motors, etc.)
-- Optional: Push button on GPIO 0 for config portal trigger
-- Built-in LED on GPIO 2 for status indication
+[Features](#-features) •
+[Quick Start](#-building-and-flashing) •
+[Chasing Lights](#-chasing-light-groups) •
+[API](#-api-reference)
 
-## Pin Configuration
+![RailHub8266 Banner](https://img.shields.io/badge/🚂-ESP8266%20Railway%20Control-blue?style=for-the-badge)
 
-The controller uses the following GPIO pins for PWM outputs:
+</div>
 
-| Output | GPIO | NodeMCU Label | Notes |
-|--------|------|---------------|-------|
-| 1      | 4    | D2            | Safe for PWM |
-| 2      | 5    | D1            | Safe for PWM |
-| 3      | 12   | D6            | Safe for PWM |
-| 4      | 13   | D7            | Safe for PWM |
-| 5      | 14   | D5            | Safe for PWM |
-| 6      | 16   | D0            | No internal pull-up |
-| 7      | 0    | D3            | Boot mode pin |
-| 8      | 2    | D4            | Boot mode pin, built-in LED |
+---
 
-**Status LED**: GPIO 2 (D4) - Active LOW (LED on when pin LOW)
+## 📋 Overview
 
-**Config Portal Trigger**: GPIO 0 (D3) - Hold LOW for 3 seconds
+**ESP8266-based WiFi-controlled PWM output controller** for model railways and lighting control. Port of RailHub32 adapted for ESP8266 with 8 outputs, WebSocket real-time updates, **exclusive chasing light groups**, and blink intervals.
+
+> **⚡ Key Advantage:** Chasing light groups are ONLY available on ESP8266 version!
+
+## ✨ Features
+
+<details open>
+<summary><b>🎯 Core Functionality</b></summary>
+<br>
+
+| Feature | Description |
+|---------|-------------|
+| 🎛️ **8 PWM Outputs** | Individual on/off states and brightness (0-100%) |
+| 📡 **WebSocket Updates** | Real-time status broadcasts every 500ms - no polling |
+| 🌈 **Chasing Groups** | Up to 4 sequential chasing effects (ESP8266 EXCLUSIVE) |
+| ⏱️ **Blink Control** | Individual blink rates per output (0-65535ms) |
+| 📶 **WiFi Portal** | Connect via existing WiFi or standalone AP mode |
+| 🌐 **Web Interface** | Responsive multilingual control panel (6 languages) |
+| 💾 **EEPROM Storage** | All settings, intervals, and groups saved persistently |
+| 🔧 **WiFiManager** | Easy WiFi setup via captive portal |
+| 🏠 **mDNS Support** | Access via `railhub8266.local` |
+| ✏️ **Custom Names** | Meaningful output labels (persist across reboots) |
+| 🔌 **RESTful API** | Complete API for home automation integration |
+
+</details>
+
+<details>
+<summary><b>🚨 ESP8266-Exclusive Features</b></summary>
+<br>
+
+### 🌟 Chasing Light Groups
+
+**Only available on ESP8266!** Create dynamic sequential lighting effects:
+
+- ✅ Up to 4 independent chasing groups
+- ✅ Configurable step intervals (100-10000ms)
+- ✅ Custom group names
+- ✅ Persistent storage in EEPROM
+- ✅ RESTful API control
+
+```json
+// Example: Traffic light sequence
+{
+  "groupId": 0,
+  "name": "Traffic Light",
+  "outputs": [0, 1, 2],
+  "interval": 2000
+}
+```
+
+</details>
+
+## 🛠️ Hardware Requirements
+
+<table>
+<tr>
+<td>
+
+### Required Components
+
+- ✅ ESP8266 board
+  - ESP-12E
+  - NodeMCU
+  - Wemos D1 Mini
+  - Compatible variants
+- ✅ 8 PWM-capable devices
+  - LEDs
+  - Motors
+  - Servos
+  - Relays
+
+</td>
+<td>
+
+### Optional Components
+
+- 🔘 Push button (GPIO 0)
+  - Config portal trigger
+- 💡 Built-in LED (GPIO 2)
+  - Status indication
+- 🔌 Power supply
+  - 3.3V or 5V compatible
+
+</td>
+</tr>
+</table>
+
+## 📌 Pin Configuration
+
+### PWM Output Mapping
+
+<div align="center">
+
+| Output | GPIO | NodeMCU Label | Notes | Status |
+|--------|------|---------------|-------|--------|
+| 1 | 4 | D2 | Safe for PWM | ✅ |
+| 2 | 5 | D1 | Safe for PWM | ✅ |
+| 3 | 12 | D6 | Safe for PWM | ✅ |
+| 4 | 13 | D7 | Safe for PWM | ✅ |
+| 5 | 14 | D5 | Safe for PWM | ✅ |
+| 6 | 16 | D0 | No internal pull-up | ⚠️ |
+| 7 | 0 | D3 | Boot mode pin | ⚠️ |
+| 8 | 2 | D4 | Boot mode pin, LED | ⚠️ |
+
+</div>
+
+### Special Functions
+
+- 💡 **Status LED**: GPIO 2 (D4) - Active LOW (LED on when pin LOW)
+- 🔘 **Config Portal**: GPIO 0 (D3) - Hold LOW for 3 seconds
 
 ## Platform Differences from ESP32 Version
 
