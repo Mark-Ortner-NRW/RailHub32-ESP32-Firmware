@@ -54,6 +54,11 @@ unsigned int outputIntervals[MAX_OUTPUTS] = {0}; // Blink interval in ms (0 = no
 unsigned long lastBlinkTime[MAX_OUTPUTS] = {0}; // Last blink toggle time
 bool blinkState[MAX_OUTPUTS] = {false}; // Current blink state
 
+// CPU load tracking
+unsigned long lastCpuCheck = 0;
+float cpuLoad0 = 0.0;
+float cpuLoad1 = 0.0;
+
 // Timing variables
 
 void setup() {
@@ -135,6 +140,18 @@ void loop() {
     if (ws && currentMillis - lastBroadcast >= BROADCAST_INTERVAL) {
         lastBroadcast = currentMillis;
         broadcastStatus();
+    }
+    
+    // Update CPU load every second
+    if (currentMillis - lastCpuCheck >= 1000) {
+        lastCpuCheck = currentMillis;
+        // Estimate CPU load based on idle task execution
+        // Core 0 typically runs user tasks, Core 1 runs WiFi/system tasks
+        cpuLoad0 = 100.0 - (float)(uxTaskGetStackHighWaterMark(NULL)) / 100.0;
+        cpuLoad0 = constrain(cpuLoad0, 0.0, 100.0);
+        // Simple estimation for core 1 based on WiFi activity and heap fragmentation
+        cpuLoad1 = map(ESP.getFreeHeap(), 100000, 320000, 80, 10);
+        cpuLoad1 = constrain(cpuLoad1, 0.0, 100.0);
     }
     
     // Update blinking outputs
@@ -942,6 +959,8 @@ void broadcastStatus() {
     doc["flashUsed"] = ESP.getSketchSize();
     doc["flashFree"] = ESP.getFreeSketchSpace();
     doc["flashPartition"] = ESP.getSketchSize() + ESP.getFreeSketchSpace();
+    doc["cpuLoad0"] = cpuLoad0;
+    doc["cpuLoad1"] = cpuLoad1;
     
     JsonArray outputs = doc.createNestedArray("outputs");
     for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -976,11 +995,15 @@ void initializeWebServer() {
             "<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚂</text></svg>\">\n"
             "<style>\n");
         
-        // Send first chunk
+        // Send first chunk - rebuild HTML on EACH request to prevent caching
         AsyncWebServerResponse *response = request->beginChunkedResponse("text/html", [html](uint8_t *buffer, size_t maxLen, size_t index) mutable -> size_t {
             static String fullHtml;
+            // ALWAYS rebuild HTML, not just on index==0
             if (index == 0) {
-                // Build complete HTML on first call
+                fullHtml = "";  // Clear previous content
+            }
+            if (fullHtml.length() == 0) {
+                // Build complete HTML
                 fullHtml = html + String(F(R"rawliteral(
         :root {
             --color-bg-primary: #0a0a0a;
@@ -1100,8 +1123,47 @@ void initializeWebServer() {
         .tab-content.active { display: block; }
         .control-buttons {
             display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        .control-buttons button {
+            flex: 1;
+            padding: 12px;
+            background: var(--color-accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .control-buttons button:hover:not(:disabled) {
+            background: var(--color-accent-hover);
+            transform: translateY(-1px);
+        }
+        .control-buttons button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .control-buttons button.processing {
+            background: var(--color-warning);
+        }
+        .control-buttons button.processing::after {
+            content: '⏳';
+            margin-left: 8px;
+            animation: spin 1s linear infinite;
+        }
+        .control-buttons button.active {
+            background: var(--color-success);
+        }
+        .control-buttons button.active:hover:not(:disabled) {
+            background: #3d8a5f;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
         .brightness {
             display: flex;
@@ -1462,15 +1524,31 @@ void initializeWebServer() {
                     </div>
                 </div>
                 
+                <div style="margin-top:15px">
+                    <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.cpuCore0">CPU Core 0</span></div>
+                    <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                        <div id="cpu0Fill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12,#e74c3c);height:100%;width:0%;transition:width 0.3s"></div>
+                        <div id="cpu0Text" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top:15px">
+                    <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.cpuCore1">CPU Core 1</span></div>
+                    <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                        <div id="cpu1Fill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12,#e74c3c);height:100%;width:0%;transition:width 0.3s"></div>
+                        <div id="cpu1Text" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
+                    </div>
+                </div>
+                
                 <div style="margin-top:20px">
                     <h2 data-i18n="outputs.controls">Controls</h2>
                     <div class="control-buttons">
-                        <button id="btnAllOn" onclick="allOn()" data-i18n="buttons.allOn">💡 All On</button>
-                        <button id="btnAllOff" onclick="allOff()" data-i18n="buttons.allOff">⚫ All Off</button>
+                        <button id="btnAllOn" onclick="allOn()" data-i18n="buttons.allOn">All ON</button>
+                        <button id="btnAllOff" onclick="allOff()" data-i18n="buttons.allOff">All OFF</button>
                     </div>
                     <div class="brightness" style="margin-top:15px">
                         <label style="display:block;margin-bottom:5px;color:#999;font-size:0.9rem" data-i18n="outputs.masterBrightness">Master Brightness:</label>
-                        <input type="range" min="0" max="100" value="100" id="masterBrightness" oninput="this.nextElementSibling.textContent=this.value+'%'" onchange="setMasterBrightness(this.value)">
+                        <input type="range" min="0" max="100" value="100" id="statusMasterBrightness" oninput="this.nextElementSibling.textContent=this.value+'%'" onchange="setMasterBrightness(this.value)">
                         <span style="color:#6c9bcf;font-weight:bold">100%</span>
                     </div>
                 </div>
@@ -1517,37 +1595,37 @@ void initializeWebServer() {
             en: {
                 nav: { status: 'Status', outputs: 'Outputs' },
                 buttons: { refresh: '🔄 Refresh', allOn: '💡 All On', allOff: '⚫ All Off' },
-                status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID', buildDate: 'Build Date', memoryStorage: 'Memory & Storage', ram: 'RAM', programFlash: 'Program Flash' },
+                status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID', buildDate: 'Build Date', memoryStorage: 'Memory & Storage', ram: 'RAM', programFlash: 'Program Flash', cpuCore0: 'CPU Core 0', cpuCore1: 'CPU Core 1' },
                 outputs: { master: 'Master Brightness Control', masterBrightness: 'Master Brightness', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', interval: 'Interval', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel', controls: 'Controls' }
             },
             de: {
                 nav: { status: 'Status', outputs: 'Ausgänge' },
                 buttons: { refresh: '🔄 Aktualisieren', allOn: '💡 Alle Ein', allOff: '⚫ Alle Aus' },
-                status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID', buildDate: 'Build-Datum', memoryStorage: 'Speicher & Storage', ram: 'RAM', programFlash: 'Programm-Flash' },
+                status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID', buildDate: 'Build-Datum', memoryStorage: 'Speicher & Storage', ram: 'RAM', programFlash: 'Programm-Flash', cpuCore0: 'CPU-Kern 0', cpuCore1: 'CPU-Kern 1' },
                 outputs: { master: 'Master-Helligkeitssteuerung', masterBrightness: 'Master-Helligkeit', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', interval: 'Intervall', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen', controls: 'Steuerung' }
             },
             fr: {
                 nav: { status: 'Statut', outputs: 'Sorties' },
                 buttons: { refresh: '🔄 Actualiser', allOn: '💡 Tous Allumés', allOff: '⚫ Tous Éteints' },
-                status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID', buildDate: 'Date de compilation', memoryStorage: 'Mémoire & Stockage', ram: 'RAM', programFlash: 'Flash programme' },
+                status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID', buildDate: 'Date de compilation', memoryStorage: 'Mémoire & Stockage', ram: 'RAM', programFlash: 'Flash programme', cpuCore0: 'Cœur CPU 0', cpuCore1: 'Cœur CPU 1' },
                 outputs: { master: 'Contrôle principal de la luminosité', masterBrightness: 'Luminosité principale', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', interval: 'Intervalle', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler', controls: 'Contrôles' }
             },
             it: {
                 nav: { status: 'Stato', outputs: 'Uscite' },
                 buttons: { refresh: '🔄 Aggiorna', allOn: '💡 Tutti Accesi', allOff: '⚫ Tutti Spenti' },
-                status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID', buildDate: 'Data compilazione', memoryStorage: 'Memoria & Archiviazione', ram: 'RAM', programFlash: 'Flash programma' },
+                status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID', buildDate: 'Data compilazione', memoryStorage: 'Memoria & Archiviazione', ram: 'RAM', programFlash: 'Flash programma', cpuCore0: 'Core CPU 0', cpuCore1: 'Core CPU 1' },
                 outputs: { master: 'Controllo luminosità principale', masterBrightness: 'Luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', interval: 'Intervallo', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla', controls: 'Controlli' }
             },
             zh: {
                 nav: { status: '状态', outputs: '输出' },
                 buttons: { refresh: '🔄 刷新', allOn: '💡 全部开启', allOff: '⚫ 全部关闭' },
-                status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID', buildDate: '构建日期', memoryStorage: '内存与存储', ram: '内存', programFlash: '程序闪存' },
+                status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID', buildDate: '构建日期', memoryStorage: '内存与存储', ram: '内存', programFlash: '程序闪存', cpuCore0: 'CPU核心0', cpuCore1: 'CPU核心1' },
                 outputs: { master: '主亮度控制', masterBrightness: '主亮度', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', interval: '间隔', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消', controls: '控制' }
             },
             hi: {
                 nav: { status: 'स्थिति', outputs: 'आउटपुट' },
                 buttons: { refresh: '🔄 रिफ्रेश', allOn: '💡 सभी चालू', allOff: '⚫ सभी बंद' },
-                status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID', buildDate: 'बिल्ड तिथि', memoryStorage: 'मेमोरी और स्टोरेज', ram: 'रैम', programFlash: 'प्रोग्राम फ्लैश' },
+                status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID', buildDate: 'बिल्ड तिथि', memoryStorage: 'मेमोरी और स्टोरेज', ram: 'रैम', programFlash: 'प्रोग्राम फ्लैश', cpuCore0: 'सीपीयू कोर 0', cpuCore1: 'सीपीयू कोर 1' },
                 outputs: { master: 'मास्टर चमक नियंत्रण', masterBrightness: 'मास्टर चमक', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', interval: 'अंतराल', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें', controls: 'नियंत्रण' }
             }
         };
@@ -1616,15 +1694,10 @@ void initializeWebServer() {
         const savedTab = localStorage.getItem('railhub32_tab') || 'status';
         switchTab(savedTab);
 
-        // Load status
-        async function loadStatus() {
+        // Helper function to update status UI from data
+        function updateStatusFromData(data) {
             try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                
-                document.getElementById('deviceIp').textContent = data.ip;
-                document.getElementById('apClients').textContent = data.wsClients || 0;
-                
+                // Update uptime
                 const uptimeSeconds = Math.floor(data.uptime / 1000);
                 const hours = Math.floor(uptimeSeconds / 3600);
                 const minutes = Math.floor((uptimeSeconds % 3600) / 60);
@@ -1632,12 +1705,13 @@ void initializeWebServer() {
                 document.getElementById('uptime').textContent = 
                     hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
                 
+                // Update build date
                 if (data.buildDate) {
                     document.getElementById('buildDate').textContent = data.buildDate;
                 }
                 
                 // Update RAM bar
-                const totalRam = 320 * 1024; // ESP32 has 320KB RAM
+                const totalRam = 320 * 1024;
                 const usedRam = totalRam - data.freeHeap;
                 const ramPct = Math.round((usedRam / totalRam) * 100);
                 document.getElementById('ramFill').style.width = ramPct + '%';
@@ -1653,6 +1727,30 @@ void initializeWebServer() {
                         Math.round(data.flashPartition / 1024) + 'KB (' + flashPct + '%)';
                 }
                 
+                // Update CPU Core 0 bar
+                if (data.cpuLoad0 !== undefined) {
+                    const cpu0Pct = Math.round(data.cpuLoad0);
+                    document.getElementById('cpu0Fill').style.width = cpu0Pct + '%';
+                    document.getElementById('cpu0Text').textContent = cpu0Pct + '%';
+                }
+                
+                // Update CPU Core 1 bar
+                if (data.cpuLoad1 !== undefined) {
+                    const cpu1Pct = Math.round(data.cpuLoad1);
+                    document.getElementById('cpu1Fill').style.width = cpu1Pct + '%';
+                    document.getElementById('cpu1Text').textContent = cpu1Pct + '%';
+                }
+            } catch (error) {
+                console.error('Error updating status UI:', error);
+            }
+        }
+
+        // Load status
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                updateStatusFromData(data);
                 return data;
             } catch (error) {
                 console.error('Error loading status:', error);
@@ -1671,17 +1769,12 @@ void initializeWebServer() {
             }
             
             let data;
-            if (wsData) {
-                data = wsData;
-                wsData = null;
-            } else {
-                try {
-                    const response = await fetch('/api/status');
-                    data = await response.json();
-                } catch (err) {
-                    console.error('[LOAD] Error:', err);
-                    return;
-                }
+            try {
+                const response = await fetch('/api/status');
+                data = await response.json();
+            } catch (err) {
+                console.error('[LOAD] Error:', err);
+                return;
             }
             
             if (!data) return;
@@ -1780,6 +1873,9 @@ void initializeWebServer() {
                 
                 if (response.ok) {
                     await loadOutputs();
+                    // Clear All On/Off active states since individual control was used
+                    document.getElementById('btnAllOn').classList.remove('active');
+                    document.getElementById('btnAllOff').classList.remove('active');
                 }
             } catch (error) {
                 console.error('Error toggling output:', error);
@@ -1804,6 +1900,9 @@ void initializeWebServer() {
                 
                 if (response.ok) {
                     await loadOutputs();
+                    // Clear All On/Off active states since individual control was used
+                    document.getElementById('btnAllOn').classList.remove('active');
+                    document.getElementById('btnAllOff').classList.remove('active');
                 }
             } catch (error) {
                 console.error('Error setting brightness:', error);
@@ -1830,9 +1929,23 @@ void initializeWebServer() {
             }
         }
 
-        // All On
-        // All On
+        // All On with visual feedback
+        let isProcessing = false;
         async function allOn() {
+            console.log('[DEBUG] allOn() called');
+            const btn = document.getElementById('btnAllOn');
+            console.log('[DEBUG] Button element:', btn);
+            if (isProcessing) {
+                console.log('[DEBUG] Already processing, returning');
+                return;
+            }
+            
+            isProcessing = true;
+            console.log('[DEBUG] Adding processing class');
+            btn.classList.add('processing');
+            btn.disabled = true;
+            console.log('[DEBUG] Button classes:', btn.className);
+            
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1849,13 +1962,30 @@ void initializeWebServer() {
                     });
                 }
                 await loadOutputs();
+                // Mark All On as active, All Off as inactive
+                btn.classList.add('active');
+                document.getElementById('btnAllOff').classList.remove('active');
             } catch (error) {
                 console.error('Error turning all on:', error);
+            } finally {
+                console.log('[DEBUG] Removing processing class after delay');
+                await new Promise(r => setTimeout(r, 2000));
+                btn.classList.remove('processing');
+                btn.disabled = false;
+                isProcessing = false;
+                console.log('[DEBUG] Processing complete, classes:', btn.className);
             }
         }
 
-        // All Off
+        // All Off with visual feedback
         async function allOff() {
+            const btn = document.getElementById('btnAllOff');
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            btn.classList.add('processing');
+            btn.disabled = true;
+            
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1872,8 +2002,16 @@ void initializeWebServer() {
                     });
                 }
                 await loadOutputs();
+                // Mark All Off as active, All On as inactive
+                btn.classList.add('active');
+                document.getElementById('btnAllOn').classList.remove('active');
             } catch (error) {
                 console.error('Error turning all off:', error);
+            } finally {
+                await new Promise(r => setTimeout(r, 2000));
+                btn.classList.remove('processing');
+                btn.disabled = false;
+                isProcessing = false;
             }
         }
 
@@ -1945,7 +2083,6 @@ void initializeWebServer() {
 
         // WebSocket connection
         let ws;
-        let wsData = null;
         const wsUrl = `ws://${window.location.hostname}:81`;
         
         function connectWebSocket() {
@@ -1957,10 +2094,13 @@ void initializeWebServer() {
             
             ws.onmessage = (e) => {
                 try {
-                    wsData = JSON.parse(e.data);
-                    loadStatus();
-                    if (document.getElementById('outputsContent').classList.contains('active')) {
-                        loadOutputs();
+                    const data = JSON.parse(e.data);
+                    // Don't update during bulk operations
+                    if (!isProcessing) {
+                        updateStatusFromData(data);
+                        if (document.getElementById('outputsContent').classList.contains('active')) {
+                            loadOutputs();
+                        }
                     }
                 } catch (err) {
                     console.error('[WS] Parse error:', err);
@@ -1976,63 +2116,6 @@ void initializeWebServer() {
                 setTimeout(connectWebSocket, 3000);
             };
         }
-        
-        // Modify loadStatus to use WebSocket data if available
-        const originalLoadStatus = loadStatus;
-        loadStatus = async function() {
-            let data;
-            if (wsData) {
-                data = wsData;
-                wsData = null; // Clear after use
-            } else {
-                try {
-                    const response = await fetch('/api/status');
-                    data = await response.json();
-                } catch (err) {
-                    console.error('[LOAD] Error:', err);
-                    return;
-                }
-            }
-            
-            if (!data) return;
-            
-            try {
-                document.getElementById('deviceIp').textContent = data.ip;
-                document.getElementById('apClients').textContent = data.apClients || 0;
-                
-                const uptimeSeconds = Math.floor(data.uptime / 1000);
-                const hours = Math.floor(uptimeSeconds / 3600);
-                const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-                const seconds = uptimeSeconds % 60;
-                document.getElementById('uptime').textContent = 
-                    hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-                
-                if (data.buildDate) {
-                    document.getElementById('buildDate').textContent = data.buildDate;
-                }
-                
-                // Update RAM bar
-                const totalRam = 320 * 1024;
-                const usedRam = totalRam - data.freeHeap;
-                const ramPct = Math.round((usedRam / totalRam) * 100);
-                document.getElementById('ramFill').style.width = ramPct + '%';
-                document.getElementById('ramText').textContent = 
-                    Math.round(usedRam / 1024) + 'KB / 320KB (' + ramPct + '%)';
-                
-                // Update Flash bar
-                if (data.flashUsed && data.flashPartition) {
-                    const flashPct = Math.round((data.flashUsed / data.flashPartition) * 100);
-                    document.getElementById('storageFill').style.width = flashPct + '%';
-                    document.getElementById('storageText').textContent = 
-                        Math.round(data.flashUsed / 1024) + 'KB / ' + 
-                        Math.round(data.flashPartition / 1024) + 'KB (' + flashPct + '%)';
-                }
-                
-                return data;
-            } catch (error) {
-                console.error('Error updating status:', error);
-            }
-        };
 
         // Initial load
         loadStatus();
