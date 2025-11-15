@@ -1098,6 +1098,16 @@ void initializeWebServer() {
         main { min-height: 500px; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        .control-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .brightness {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
         .toolbar {
             display: flex;
             gap: 12px;
@@ -1424,16 +1434,8 @@ void initializeWebServer() {
         <main>
             <!-- Status Tab -->
             <div id="statusContent" class="tab-content active">
-                <h3 class="section-title" data-i18n="status.deviceInfo">Device Information</h3>
+                <h2 data-i18n="nav.status">Status</h2>
                 <div class="status-grid">
-                    <div class="status-card">
-                        <div class="status-value" id="deviceIp">Loading...</div>
-                        <div class="status-label" data-i18n="status.apIp">AP IP Address</div>
-                    </div>
-                    <div class="status-card">
-                        <div class="status-value" id="apClients">0</div>
-                        <div class="status-label" data-i18n="status.clients">Connected Clients</div>
-                    </div>
                     <div class="status-card">
                         <div class="status-value" id="uptime">0s</div>
                         <div class="status-label" data-i18n="status.uptime">Uptime</div>
@@ -1444,48 +1446,38 @@ void initializeWebServer() {
                     </div>
                 </div>
                 
-                <h3 class="section-title" style="margin-top:40px" data-i18n="status.memoryStorage">Memory & Storage</h3>
-                <div style="max-width:800px">
-                    <div style="margin-bottom:25px">
-                        <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.ram">RAM</span> (320 KB)</div>
-                        <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
-                            <div id="ramFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
-                            <div id="ramText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
-                        </div>
-                    </div>
-                    <div style="margin-bottom:25px">
-                        <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.programFlash">Program Flash</span> (1.25 MB)</div>
-                        <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
-                            <div id="storageFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
-                            <div id="storageText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
-                        </div>
+                <div style="margin-top:15px">
+                    <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.ram">RAM</span> (320 KB)</div>
+                    <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                        <div id="ramFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
+                        <div id="ramText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
                     </div>
                 </div>
                 
-                <h3 class="section-title" style="margin-top:40px">Device Identifiers</h3>
-                <div class="status-grid">
-                    <div class="status-card">
-                        <div class="status-value" style="font-size:1.1rem;word-break:break-all">)rawliteral"));
-                fullHtml += macAddress;
-                fullHtml += String(F(R"rawliteral(</div>
-                        <div class="status-label" data-i18n="status.macAddr">MAC Address</div>
+                <div style="margin-top:15px">
+                    <div class="status-label" style="margin-bottom:8px"><span data-i18n="status.programFlash">Program Flash</span> (1.25 MB)</div>
+                    <div style="background:#333;height:24px;border-radius:3px;overflow:hidden;position:relative">
+                        <div id="storageFill" style="background:linear-gradient(90deg,#4a9b6f,#f39c12);height:100%;width:0%;transition:width 0.3s"></div>
+                        <div id="storageText" style="position:absolute;top:3px;left:0;right:0;text-align:center;font-size:0.75rem;color:#fff;text-shadow:1px 1px 2px rgba(0,0,0,0.8)">-</div>
                     </div>
-                    <div class="status-card">
-                        <div class="status-value" style="font-size:1.3rem">)rawliteral"));
-                fullHtml += String(AP_SSID);
-                fullHtml += String(F(R"rawliteral(</div>
-                        <div class="status-label" data-i18n="status.apSsid">AP SSID</div>
+                </div>
+                
+                <div style="margin-top:20px">
+                    <h2 data-i18n="outputs.controls">Controls</h2>
+                    <div class="control-buttons">
+                        <button id="btnAllOn" onclick="allOn()" data-i18n="buttons.allOn">💡 All On</button>
+                        <button id="btnAllOff" onclick="allOff()" data-i18n="buttons.allOff">⚫ All Off</button>
+                    </div>
+                    <div class="brightness" style="margin-top:15px">
+                        <label style="display:block;margin-bottom:5px;color:#999;font-size:0.9rem" data-i18n="outputs.masterBrightness">Master Brightness:</label>
+                        <input type="range" min="0" max="100" value="100" id="masterBrightness" oninput="this.nextElementSibling.textContent=this.value+'%'" onchange="setMasterBrightness(this.value)">
+                        <span style="color:#6c9bcf;font-weight:bold">100%</span>
                     </div>
                 </div>
             </div>
 
             <!-- Outputs Tab -->
             <div id="outputsContent" class="tab-content">
-                <div class="toolbar">
-                    <button id="allOn" class="btn" data-i18n="buttons.allOn">💡 All On</button>
-                    <button id="allOff" class="btn" data-i18n="buttons.allOff">⚫ All Off</button>
-                </div>
-                
                 <!-- Master Brightness Control -->
                 <div class="output-card master-brightness-card">
                     <div class="output-header">
@@ -1526,37 +1518,37 @@ void initializeWebServer() {
                 nav: { status: 'Status', outputs: 'Outputs' },
                 buttons: { refresh: '🔄 Refresh', allOn: '💡 All On', allOff: '⚫ All Off' },
                 status: { deviceInfo: 'Device Information', apIp: 'AP IP Address', clients: 'Connected Clients', uptime: 'Uptime', freeHeap: 'Free Heap', macAddr: 'MAC Address', apSsid: 'AP SSID', buildDate: 'Build Date', memoryStorage: 'Memory & Storage', ram: 'RAM', programFlash: 'Program Flash' },
-                outputs: { master: 'Master Brightness Control', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', interval: 'Interval', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel' }
+                outputs: { master: 'Master Brightness Control', masterBrightness: 'Master Brightness', masterDesc: 'Adjusts brightness for all active outputs simultaneously', individual: 'Individual Output Control', output: 'Output', pin: 'Pin', brightness: 'Brightness', interval: 'Interval', all: 'ALL', on: 'ON', off: 'OFF', editName: 'Edit Name', saveName: 'Save', cancelEdit: 'Cancel', controls: 'Controls' }
             },
             de: {
                 nav: { status: 'Status', outputs: 'Ausgänge' },
                 buttons: { refresh: '🔄 Aktualisieren', allOn: '💡 Alle Ein', allOff: '⚫ Alle Aus' },
                 status: { deviceInfo: 'Geräteinformationen', apIp: 'AP IP-Adresse', clients: 'Verbundene Clients', uptime: 'Laufzeit', freeHeap: 'Freier Speicher', macAddr: 'MAC-Adresse', apSsid: 'AP SSID', buildDate: 'Build-Datum', memoryStorage: 'Speicher & Storage', ram: 'RAM', programFlash: 'Programm-Flash' },
-                outputs: { master: 'Master-Helligkeitssteuerung', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', interval: 'Intervall', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen' }
+                outputs: { master: 'Master-Helligkeitssteuerung', masterBrightness: 'Master-Helligkeit', masterDesc: 'Passt die Helligkeit aller aktiven Ausgänge gleichzeitig an', individual: 'Individuelle Ausgangssteuerung', output: 'Ausgang', pin: 'Pin', brightness: 'Helligkeit', interval: 'Intervall', all: 'ALLE', on: 'EIN', off: 'AUS', editName: 'Name bearbeiten', saveName: 'Speichern', cancelEdit: 'Abbrechen', controls: 'Steuerung' }
             },
             fr: {
                 nav: { status: 'Statut', outputs: 'Sorties' },
                 buttons: { refresh: '🔄 Actualiser', allOn: '💡 Tous Allumés', allOff: '⚫ Tous Éteints' },
                 status: { deviceInfo: 'Informations sur l\'appareil', apIp: 'Adresse IP AP', clients: 'Clients connectés', uptime: 'Temps de fonctionnement', freeHeap: 'Mémoire libre', macAddr: 'Adresse MAC', apSsid: 'AP SSID', buildDate: 'Date de compilation', memoryStorage: 'Mémoire & Stockage', ram: 'RAM', programFlash: 'Flash programme' },
-                outputs: { master: 'Contrôle principal de la luminosité', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', interval: 'Intervalle', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler' }
+                outputs: { master: 'Contrôle principal de la luminosité', masterBrightness: 'Luminosité principale', masterDesc: 'Ajuste la luminosité de toutes les sorties actives simultanément', individual: 'Contrôle individuel des sorties', output: 'Sortie', pin: 'Broche', brightness: 'Luminosité', interval: 'Intervalle', all: 'TOUS', on: 'ALLUMÉ', off: 'ÉTEINT', editName: 'Modifier le nom', saveName: 'Enregistrer', cancelEdit: 'Annuler', controls: 'Contrôles' }
             },
             it: {
                 nav: { status: 'Stato', outputs: 'Uscite' },
                 buttons: { refresh: '🔄 Aggiorna', allOn: '💡 Tutti Accesi', allOff: '⚫ Tutti Spenti' },
                 status: { deviceInfo: 'Informazioni dispositivo', apIp: 'Indirizzo IP AP', clients: 'Client connessi', uptime: 'Tempo di attività', freeHeap: 'Memoria libera', macAddr: 'Indirizzo MAC', apSsid: 'AP SSID', buildDate: 'Data compilazione', memoryStorage: 'Memoria & Archiviazione', ram: 'RAM', programFlash: 'Flash programma' },
-                outputs: { master: 'Controllo luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', interval: 'Intervallo', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla' }
+                outputs: { master: 'Controllo luminosità principale', masterBrightness: 'Luminosità principale', masterDesc: 'Regola la luminosità di tutte le uscite attive simultaneamente', individual: 'Controllo uscite individuali', output: 'Uscita', pin: 'Pin', brightness: 'Luminosità', interval: 'Intervallo', all: 'TUTTI', on: 'ACCESO', off: 'SPENTO', editName: 'Modifica nome', saveName: 'Salva', cancelEdit: 'Annulla', controls: 'Controlli' }
             },
             zh: {
                 nav: { status: '状态', outputs: '输出' },
                 buttons: { refresh: '🔄 刷新', allOn: '💡 全部开启', allOff: '⚫ 全部关闭' },
                 status: { deviceInfo: '设备信息', apIp: 'AP IP地址', clients: '已连接客户端', uptime: '运行时间', freeHeap: '可用内存', macAddr: 'MAC地址', apSsid: 'AP SSID', buildDate: '构建日期', memoryStorage: '内存与存储', ram: '内存', programFlash: '程序闪存' },
-                outputs: { master: '主亮度控制', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', interval: '间隔', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消' }
+                outputs: { master: '主亮度控制', masterBrightness: '主亮度', masterDesc: '同时调整所有活动输出的亮度', individual: '单独输出控制', output: '输出', pin: '引脚', brightness: '亮度', interval: '间隔', all: '全部', on: '开启', off: '关闭', editName: '编辑名称', saveName: '保存', cancelEdit: '取消', controls: '控制' }
             },
             hi: {
                 nav: { status: 'स्थिति', outputs: 'आउटपुट' },
                 buttons: { refresh: '🔄 रिफ्रेश', allOn: '💡 सभी चालू', allOff: '⚫ सभी बंद' },
                 status: { deviceInfo: 'डिवाइस जानकारी', apIp: 'AP IP पता', clients: 'कनेक्टेड क्लाइंट', uptime: 'अपटाइम', freeHeap: 'खाली मेमोरी', macAddr: 'MAC पता', apSsid: 'AP SSID', buildDate: 'बिल्ड तिथि', memoryStorage: 'मेमोरी और स्टोरेज', ram: 'रैम', programFlash: 'प्रोग्राम फ्लैश' },
-                outputs: { master: 'मास्टर चमक नियंत्रण', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', interval: 'अंतराल', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें' }
+                outputs: { master: 'मास्टर चमक नियंत्रण', masterBrightness: 'मास्टर चमक', masterDesc: 'सभी सक्रिय आउटपुट की चमक एक साथ समायोजित करता है', individual: 'व्यक्तिगत आउटपुट नियंत्रण', output: 'आउटपुट', pin: 'पिन', brightness: 'चमक', interval: 'अंतराल', all: 'सभी', on: 'चालू', off: 'बंद', editName: 'नाम संपादित करें', saveName: 'सहेजें', cancelEdit: 'रद्द करें', controls: 'नियंत्रण' }
             }
         };
 
@@ -1839,7 +1831,8 @@ void initializeWebServer() {
         }
 
         // All On
-        document.getElementById('allOn').addEventListener('click', async () => {
+        // All On
+        async function allOn() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1859,10 +1852,10 @@ void initializeWebServer() {
             } catch (error) {
                 console.error('Error turning all on:', error);
             }
-        });
+        }
 
         // All Off
-        document.getElementById('allOff').addEventListener('click', async () => {
+        async function allOff() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1882,18 +1875,11 @@ void initializeWebServer() {
             } catch (error) {
                 console.error('Error turning all off:', error);
             }
-        });
+        }
 
-        // Master Brightness Control
-        const masterBrightnessSlider = document.getElementById('masterBrightness');
-        const masterBrightnessValue = document.getElementById('masterBrightnessValue');
-        
-        masterBrightnessSlider.addEventListener('input', function() {
-            masterBrightnessValue.textContent = this.value + '%';
-        });
-        
-        masterBrightnessSlider.addEventListener('change', async function() {
-            const brightness = parseInt(this.value);
+        // Master Brightness Control (Status tab)
+        async function setMasterBrightness(val) {
+            const brightness = parseInt(val);
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
@@ -1916,7 +1902,7 @@ void initializeWebServer() {
             } catch (error) {
                 console.error('Error setting master brightness:', error);
             }
-        });
+        }
 
         // Output name editing functions
         function editOutputName(pin, currentName, index) {
